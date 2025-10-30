@@ -2,8 +2,6 @@
 
 # Variables
 ENTRY=src/index.js
-DIST=dist
-BUNDLE=$(DIST)/bundle.js
 
 # Default target
 .PHONY: all
@@ -21,7 +19,7 @@ dev:
 # Create a production bundle
 .PHONY: build
 build:
-	npx fxhash bundle $(ENTRY) --output $(BUNDLE)
+	npx fxhash bundle
 
 # Preview the production bundle
 .PHONY: preview
