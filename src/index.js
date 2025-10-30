@@ -6,8 +6,12 @@ const sketch = (p) => {
   let scaleUnit;
   // Graphics object used to draw everything.
   let pg;
+  let el_width = 100;
+  let el_height = 100;
 
   p.setup = () => {
+    p.randomSeed($fx.rand() * 1000000);
+    p.noiseSeed($fx.rand() * 1000000);
     const w = window.innerWidth;
     const h = window.innerHeight;
     p.createCanvas(w, h, p.WEBGL);
@@ -23,13 +27,15 @@ const sketch = (p) => {
   };
 
   p.draw = () => {
+    el_width += p.random(-2, 2);
+    el_height += p.random(-2, 2);
     pg.push();
     pg.clear();
     // Start drawing at the center of the screen.
     pg.translate(pg.width / 2, pg.height / 2);
     // Scale the sketch up/down to allow for dimensionless.
     pg.scale(scaleUnit);
-    pg.ellipse(10, 10, p.width/2, p.height/2);
+    pg.ellipse(el_width, el_height, p.width/2, p.height/2);
     pg.pop();
     // Draw the graphics buffer to screen.
     p.image(pg, -p.width / 2, -p.height / 2);
