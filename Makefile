@@ -19,17 +19,12 @@ dev:
 # Create a production bundle
 .PHONY: build
 build:
-	npx fxhash bundle
-
-# Preview the production bundle
-.PHONY: preview
-preview:
-	npx fxhash preview --bundle $(BUNDLE)
+	npx fxhash build
 
 # Clean the dist directory
 .PHONY: clean
 clean:
-	rm -rf $(DIST)
+	rm -rf upload.zip
 
 # Rebuild and preview
 .PHONY: rebuild
