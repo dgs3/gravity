@@ -1,5 +1,3 @@
-import p5 from 'p5';
-
 const sketch = (p) => {
   let fixedSize = 1000;
   // Scaling factor for the entire sketch.
