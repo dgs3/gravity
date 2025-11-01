@@ -14,8 +14,5 @@
     "fxhash": "latest",
 	"eslint": "latest"
   },
-  "dependencies": {
-    "p5": "^2.0.0"
-  },
   "type": "module"
 }

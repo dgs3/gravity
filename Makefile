@@ -9,7 +9,7 @@ all: dev
 
 .PHONY: install
 install:
-	npm install --include=dev
+	npm install
 
 # Local development server
 .PHONY: dev
