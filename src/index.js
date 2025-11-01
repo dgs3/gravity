@@ -4,17 +4,17 @@ const sketch = (p) => {
   let pg;
 
   const G = 1;
-  const centralMass = 10000;
-  const secondaryMass = 7000;
+  const centralMass = 1000;
+  const secondaryMass = 700;
   const satelliteMass = .25;
   // How far from the center the satellite spawns
   const spawnRadius = fixedSize * 0.48;
   const dt = 0.01;
-  const stepsPerFrame = 200;
+  const stepsPerFrame = 10;
+  const spawnProbability = 0.02;
 
-  let satellite;
-  let currentAcceleration;
   let masses = [];
+  let satellites = [];
 
   const computeAcceleration = (position) => {
     const totalAcceleration = p.createVector(0, 0);
@@ -38,9 +38,10 @@ const sketch = (p) => {
     return totalAcceleration;
   };
 
-  const resetSimulation = () => {
-    // Position the satellite near the left edge so it approaches the central mass from afar.
-    const initialPosition = p.createVector(-spawnRadius, fixedSize * 0.08);
+  const getBodyRadius = (massValue) => Math.max(12, Math.sqrt(massValue));
+  const getSatelliteRadius = () => Math.max(4, Math.sqrt(satelliteMass) * 4);
+
+  const createSatellite = (initialPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
     const distanceFromCenter = initialPosition.mag();
     const baseSpeed = Math.sqrt((G * centralMass) / distanceFromCenter);
@@ -48,7 +49,7 @@ const sketch = (p) => {
     // Unit vector pointing straight toward the central mass (radial inbound direction).
     const toCenter = initialPosition.copy().mult(-1).normalize();
     // Radial component ensures the satellite actually falls inward toward the mass.
-    const approachVelocity = toCenter.copy().mult(baseSpeed * 0.35);
+    const approachVelocity = toCenter.copy().mult(baseSpeed);
     // Tangential component curves the path so the satellite can swing into orbit.
     const tangentialVelocity = toCenter
       .copy()
@@ -56,35 +57,77 @@ const sketch = (p) => {
       .mult(baseSpeed * 0.85);
     // Combine both components to get the starting velocity vector.
     const initialVelocity = approachVelocity.add(tangentialVelocity);
+    const initialAcceleration = computeAcceleration(initialPosition.copy());
 
-    satellite = {
+    return {
       mass: satelliteMass,
-      position: initialPosition,
+      position: initialPosition.copy(),
       velocity: initialVelocity,
+      acceleration: initialAcceleration,
     };
+  };
 
-    currentAcceleration = computeAcceleration(initialPosition.copy());
+  const spawnSatelliteAtEdge = () => {
+    const side = Math.floor(p.random(4));
+    const range = spawnRadius;
+    let spawnPosition;
+
+    switch (side) {
+      case 0:
+        spawnPosition = p.createVector(-spawnRadius, p.random(-range, range));
+        break;
+      case 1:
+        spawnPosition = p.createVector(spawnRadius, p.random(-range, range));
+        break;
+      case 2:
+        spawnPosition = p.createVector(p.random(-range, range), -spawnRadius);
+        break;
+      default:
+        spawnPosition = p.createVector(p.random(-range, range), spawnRadius);
+        break;
+    }
+
+    satellites.push(createSatellite(spawnPosition));
+  };
+
+  const cullCollidedSatellites = () => {
+    const satelliteRadius = getSatelliteRadius();
+    satellites = satellites.filter((sat) => {
+      return !masses.some((body) => {
+        const bodyRadius = getBodyRadius(body.mass);
+        const distance = sat.position.dist(body.position);
+        return distance <= bodyRadius;
+      });
+    });
+  };
+
+  const resetSimulation = () => {
+    // Position the satellite near the left edge so it approaches the central masses from afar.
+    const initialPosition = p.createVector(-spawnRadius, fixedSize * 0.08);
+    satellites = [createSatellite(initialPosition)];
   };
 
   const stepSimulation = () => {
     for (let i = 0; i < stepsPerFrame; i += 1) {
-      const positionDelta = satellite.velocity.copy().mult(dt);
-      const accelerationDelta = currentAcceleration.copy().mult(0.5 * dt * dt);
-      satellite.position.add(positionDelta).add(accelerationDelta);
+      satellites.forEach((satellite) => {
+        const positionDelta = satellite.velocity.copy().mult(dt);
+        const accelerationDelta = satellite.acceleration.copy().mult(0.5 * dt * dt);
+        satellite.position.add(positionDelta).add(accelerationDelta);
 
-      const newAcceleration = computeAcceleration(satellite.position);
-      const velocityDelta = currentAcceleration
-        .copy()
-        .add(newAcceleration)
-        .mult(0.5 * dt);
-      satellite.velocity.add(velocityDelta);
+        const newAcceleration = computeAcceleration(satellite.position);
+        const velocityDelta = satellite.acceleration
+          .copy()
+          .add(newAcceleration)
+          .mult(0.5 * dt);
+        satellite.velocity.add(velocityDelta);
 
-      currentAcceleration = newAcceleration;
+        satellite.acceleration = newAcceleration;
+      });
     }
   };
 
   const renderScene = () => {
-    const satelliteRadius = Math.max(4, Math.sqrt(satellite.mass) * 4);
+    const satelliteRadius = getSatelliteRadius();
 
     pg.push();
     pg.clear();
@@ -94,13 +137,15 @@ const sketch = (p) => {
     pg.noStroke();
     masses.forEach((body) => {
       const [r, g, b] = body.color;
-      const radius = Math.max(12, Math.sqrt(body.mass));
+      const radius = getBodyRadius(body.mass);
       pg.fill(r, g, b);
-      pg.ellipse(body.position.x, body.position.y, radius, radius);
+      pg.ellipse(body.position.x, body.position.y, radius*2, radius*2);
     });
 
     pg.fill(120, 200, 255);
-    pg.ellipse(satellite.position.x, satellite.position.y, satelliteRadius, satelliteRadius);
+    satellites.forEach((satellite) => {
+      pg.ellipse(satellite.position.x, satellite.position.y, satelliteRadius*2, satelliteRadius*2);
+    });
 
     pg.pop();
 
@@ -142,7 +187,12 @@ const sketch = (p) => {
   };
 
   p.draw = () => {
+    if (p.random() < spawnProbability) {
+      spawnSatelliteAtEdge();
+    }
+
     stepSimulation();
+    cullCollidedSatellites();
     renderScene();
   };
 
