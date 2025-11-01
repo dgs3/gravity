@@ -4,14 +4,16 @@ const sketch = (p) => {
   let pg;
 
   const G = 1;
-  const centralMass = 1000;
-  const secondaryMass = 700;
+  const centralMass = 10000;
+  const centralRadius = 60;
+  const secondaryMass = 7000;
+  const secondaryRadius = 45;
   const satelliteMass = .25;
   // How far from the center the satellite spawns
   const spawnRadius = fixedSize * 0.48;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const spawnProbability = 0.02;
+  const spawnProbability = 0.2;
 
   let masses = [];
   let satellites = [];
@@ -38,8 +40,9 @@ const sketch = (p) => {
     return totalAcceleration;
   };
 
-  const getBodyRadius = (massValue) => Math.max(12, Math.sqrt(massValue));
-  const getSatelliteRadius = () => Math.max(4, Math.sqrt(satelliteMass) * 4);
+  const getBodyRadius = (body) => body.radius;
+  // Satellites are rendered as a single point
+  const getSatelliteRadius = () => 1;
 
   const createSatellite = (initialPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
@@ -94,9 +97,11 @@ const sketch = (p) => {
     const satelliteRadius = getSatelliteRadius();
     satellites = satellites.filter((sat) => {
       return !masses.some((body) => {
-        const bodyRadius = getBodyRadius(body.mass);
+        const bodyRadius = getBodyRadius(body);
         const distance = sat.position.dist(body.position);
-        return distance <= bodyRadius;
+        const hasCollision = distance <= bodyRadius + satelliteRadius;
+        const hasEjected = distance >= fixedSize * 3
+        return hasCollision || hasEjected;
       });
     });
   };
@@ -137,14 +142,15 @@ const sketch = (p) => {
     pg.noStroke();
     masses.forEach((body) => {
       const [r, g, b] = body.color;
-      const radius = getBodyRadius(body.mass);
+      const radius = getBodyRadius(body);
       pg.fill(r, g, b);
-      pg.ellipse(body.position.x, body.position.y, radius*2, radius*2);
+      pg.ellipse(body.position.x, body.position.y, radius * 2, radius * 2);
     });
 
-    pg.fill(120, 200, 255);
+    pg.stroke('white');
+    pg.strokeWeight(1);
     satellites.forEach((satellite) => {
-      pg.ellipse(satellite.position.x, satellite.position.y, satelliteRadius*2, satelliteRadius*2);
+      pg.point(satellite.position.x, satellite.position.y);
     });
 
     pg.pop();
@@ -173,11 +179,13 @@ const sketch = (p) => {
     masses = [
       {
         mass: centralMass,
+        radius: centralRadius,
         position: p.createVector(firstMassX, firstMassY),
         color: [255, 220, 160],
       },
       {
         mass: secondaryMass,
+        radius: secondaryRadius,
         position: p.createVector(secondMassX, secondMassY),
         color: [180, 200, 255],
       },
@@ -194,6 +202,7 @@ const sketch = (p) => {
     stepSimulation();
     cullCollidedSatellites();
     renderScene();
+    console.log(satellites.length);
   };
 
   p.windowResized = () => {
