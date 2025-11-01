@@ -44,10 +44,10 @@ const sketch = (p) => {
   // Satellites are rendered as a single point
   const getSatelliteRadius = () => 1;
 
-  const createSatellite = (initialPosition) => {
+  const createSatellite = (initialPosition, targetPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
-    const distanceFromCenter = initialPosition.mag();
-    const baseSpeed = Math.sqrt((G * centralMass) / distanceFromCenter);
+    const distanceFromTarget = targetPosition.dist(initialPosition);
+    const baseSpeed = Math.sqrt((G * centralMass) / distanceFromTarget);
 
     // Unit vector pointing straight toward the central mass (radial inbound direction).
     const toCenter = initialPosition.copy().mult(-1).normalize();
@@ -70,8 +70,9 @@ const sketch = (p) => {
     };
   };
 
-  const spawnSatelliteAtEdge = () => {
-    const side = Math.floor(p.random(4));
+  const spawnSatelliteAtEdge = (targetPosition) => {
+    // const side = Math.floor(p.random(4));
+    const side = 0;
     const range = spawnRadius;
     let spawnPosition;
 
@@ -90,7 +91,7 @@ const sketch = (p) => {
         break;
     }
 
-    satellites.push(createSatellite(spawnPosition));
+    satellites.push(createSatellite(spawnPosition, targetPosition));
   };
 
   const cullCollidedSatellites = () => {
@@ -104,12 +105,6 @@ const sketch = (p) => {
         return hasCollision || hasEjected;
       });
     });
-  };
-
-  const resetSimulation = () => {
-    // Position the satellite near the left edge so it approaches the central masses from afar.
-    const initialPosition = p.createVector(-spawnRadius, fixedSize * 0.08);
-    satellites = [createSatellite(initialPosition)];
   };
 
   const stepSimulation = () => {
@@ -190,19 +185,16 @@ const sketch = (p) => {
         color: [180, 200, 255],
       },
     ];
-
-    resetSimulation();
   };
 
   p.draw = () => {
     if (p.random() < spawnProbability) {
-      spawnSatelliteAtEdge();
+      spawnSatelliteAtEdge(masses[0].position);
     }
 
     stepSimulation();
     cullCollidedSatellites();
     renderScene();
-    console.log(satellites.length);
   };
 
   p.windowResized = () => {
