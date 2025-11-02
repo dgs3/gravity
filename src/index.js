@@ -13,6 +13,7 @@ const sketch = (p) => {
   const orbitalProbability = 0.05; // Probability of a satellite orbiting a planet
   const maxSatellites = 5000;
   const minPlanetSpacingMultiplier = 5; // Minimum gap between planets is 3x the new planet's radius
+  const energyDamping = 0.99995; // Energy loss per frame (smaller = more damping, helps stabilize orbits)
 
   let masses = [];
   let satellites = [];
@@ -56,6 +57,7 @@ const sketch = (p) => {
     return { mass, radius, color };
   };
 
+  // Check if a planet is within the bounds of the canvas
   const isPlanetWithinBounds = (planet) => {
     const halfSize = fixedSize / 2;
     return (
@@ -66,6 +68,7 @@ const sketch = (p) => {
     );
   };
 
+  // Get the minimum distance between a planet and the nearest existing planet
   const getMinimumDistance = (planet, existingPlanets) => {
     if (existingPlanets.length === 0) return Infinity;
     return Math.min(...existingPlanets.map((existing) => {
@@ -96,11 +99,14 @@ const sketch = (p) => {
   };
 
   const createAllPlanets = () => {
-    const numPlanets = Math.floor(p.random(3, 7)); // Random number between 2-6
+    const numPlanets = Math.floor(p.random(3, 7)); // Random number between 3-6 (minimum matches clusterSize max)
     const planets = [];
     const halfSize = fixedSize / 2;
 
-    // First, create a cluster of at least 2 planets close together
+    // Randomly decide how many planets to place in cluster (2 or 3)
+    const clusterSize = Math.floor(p.random(2, 4)); // Random number between 2-3
+
+    // First, create a cluster of 2 or 3 planets close together
     // Use a conservative margin to ensure planets fit even with their radii
     const maxRadius = 80; // Maximum possible planet radius
     const clusterMargin = maxRadius * 2; // Extra margin for cluster placement
@@ -108,44 +114,29 @@ const sketch = (p) => {
     const clusterCenterY = p.random(-halfSize + clusterMargin, halfSize - clusterMargin);
     const clusterSpread = fixedSize * 0.15; // How close the clustered planets are
 
-    // Place first planet in cluster
-    const planet1Attrs = createRandomPlanetAttributes();
-    let planet1 = {
-      ...planet1Attrs,
-      position: p.createVector(0, 0),
-    };
-    // Ensure first planet is within bounds
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      planet1.position = p.createVector(
-        clusterCenterX + p.random(-clusterSpread, clusterSpread),
-        clusterCenterY + p.random(-clusterSpread, clusterSpread),
-      );
-      if (isPlanetWithinBounds(planet1)) {
-        break;
+    // Place planets in cluster
+    for (let i = 0; i < clusterSize; i += 1) {
+      const attrs = createRandomPlanetAttributes();
+      let planet = { ...attrs, position: p.createVector(0, 0) };
+      
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        planet.position = p.createVector(
+          clusterCenterX + p.random(-clusterSpread, clusterSpread),
+          clusterCenterY + p.random(-clusterSpread, clusterSpread),
+        );
+        if (!isPlanetWithinBounds(planet)) {
+          continue;
+        }
+        const minDistance = getMinimumDistance(planet, planets);
+        if (minDistance >= 0) {
+          break;
+        }
       }
+      planets.push(planet);
     }
-    planets.push(planet1);
-
-    // Place second planet in cluster (close to first, but with minimum spacing)
-    const planet2Attrs = createRandomPlanetAttributes();
-    let planet2 = { ...planet2Attrs, position: p.createVector(0, 0) };
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      planet2.position = p.createVector(
-        clusterCenterX + p.random(-clusterSpread, clusterSpread),
-        clusterCenterY + p.random(-clusterSpread, clusterSpread),
-      );
-      if (!isPlanetWithinBounds(planet2)) {
-        continue;
-      }
-      const minDistance = getMinimumDistance(planet2, planets);
-      if (minDistance >= 0) {
-        break;
-      }
-    }
-    planets.push(planet2);
 
     // Place remaining planets with proper spacing
-    for (let i = 2; i < numPlanets; i += 1) {
+    for (let i = clusterSize; i < numPlanets; i += 1) {
       const attrs = createRandomPlanetAttributes();
       const newPlanet = { ...attrs, position: p.createVector(0, 0) };
       if (tryPlacePlanet(newPlanet, planets)) {
@@ -158,7 +149,7 @@ const sketch = (p) => {
 
   // Create a satellite that orbits a planet
   const createSatelliteOrbitingPlanet = (targetPlanet) => {
-    const radiusMultiplier = p.random(1, 3);
+    const radiusMultiplier = p.random(1, 2);
     // Place the satellite at a distance very close to the planet
     const initialPosition = targetPlanet.position.copy().add(p.createVector(0, targetPlanet.radius * radiusMultiplier));
     const distanceFromTarget = targetPlanet.position.dist(initialPosition);
@@ -269,6 +260,18 @@ const sketch = (p) => {
         satellite.acceleration = newAcceleration;
       });
     }
+    // Apply energy damping once per frame (after all steps) to help stabilize orbits
+    // Only apply to orbital satellites that are far from their target to help them settle
+    satellites.forEach((satellite) => {
+      if (satellite.targetPlanet) {
+        const distanceFromTarget = satellite.position.dist(satellite.targetPlanet.position);
+        const spawnDistance = satellite.targetPlanet.radius * 3.5; // Average spawn distance
+        // Only damp if satellite is further than spawn distance (elliptical orbit)
+        if (distanceFromTarget > spawnDistance * 1.5) {
+          satellite.velocity.mult(energyDamping);
+        }
+      }
+    });
   };
 
   const renderScene = () => {
@@ -288,7 +291,7 @@ const sketch = (p) => {
     });
 
     pg.stroke('white');
-    pg.strokeWeight(1);
+    pg.strokeWeight(2);
     satellites.forEach((satellite) => {
       pg.point(satellite.position.x, satellite.position.y);
     });
