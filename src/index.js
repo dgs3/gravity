@@ -14,6 +14,7 @@ const sketch = (p) => {
   const dt = 0.01;
   const stepsPerFrame = 10;
   const spawnProbability = 0.2;
+  const maxSatellites = 5000;
 
   let masses = [];
   let satellites = [];
@@ -44,6 +45,28 @@ const sketch = (p) => {
   // Satellites are rendered as a single point
   const getSatelliteRadius = () => 1;
 
+  // Create a satellite that orbits a planet
+  const createSatelliteOrbitingPlanet = (targetPlanet) => {
+    // Place the satellite at a distance very close to the planet
+    const initialPosition = targetPlanet.position.copy().add(p.createVector(0, targetPlanet.radius * 2.5));
+    const distanceFromTarget = targetPlanet.position.dist(initialPosition);
+    // Calculate the speed at which a satellite will stabily orbit the planet to form rings
+    const baseSpeed = Math.sqrt((G * targetPlanet.mass) / distanceFromTarget);
+    const vectorToPlanet = targetPlanet.position.copy().sub(initialPosition).normalize();
+    // Calculate the tangential direction of the satellite's velocity
+    const tangentialDiection = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
+    // Calculate the initial velocity of the satellite
+    const initialVelocity = tangentialDiection.copy().mult(baseSpeed);
+    // Calculate the initial acceleration of the satellite
+    const initialAcceleration = computeAcceleration(initialPosition.copy());
+    return {
+      mass: satelliteMass,
+      position: initialPosition.copy(),
+      velocity: initialVelocity,
+      acceleration: initialAcceleration,
+    };
+  };
+
   const createSatellite = (initialPosition, targetPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
     const distanceFromTarget = targetPosition.dist(initialPosition);
@@ -70,6 +93,10 @@ const sketch = (p) => {
     };
   };
 
+  const spawnSatelliteOrbitingPlanet = (targetPlanet) => {
+    satellites.push(createSatelliteOrbitingPlanet(targetPlanet));
+  };
+
   const spawnSatelliteAtEdge = (targetPosition) => {
     // const side = Math.floor(p.random(4));
     const side = 0;
@@ -92,6 +119,10 @@ const sketch = (p) => {
     }
 
     satellites.push(createSatellite(spawnPosition, targetPosition));
+
+    if (satellites.length > maxSatellites) {
+      satellites.shift();
+    }
   };
 
   const cullCollidedSatellites = () => {
@@ -189,7 +220,7 @@ const sketch = (p) => {
 
   p.draw = () => {
     if (p.random() < spawnProbability) {
-      spawnSatelliteAtEdge(masses[0].position);
+      spawnSatelliteOrbitingPlanet(masses[0]);
     }
 
     stepSimulation();
