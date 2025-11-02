@@ -14,6 +14,7 @@ const sketch = (p) => {
   const dt = 0.01;
   const stepsPerFrame = 10;
   const spawnProbability = 0.2;
+  const orbitalProbability = 0.05; // Probability of a satellite orbiting a planet
   const maxSatellites = 5000;
 
   let masses = [];
@@ -47,8 +48,9 @@ const sketch = (p) => {
 
   // Create a satellite that orbits a planet
   const createSatelliteOrbitingPlanet = (targetPlanet) => {
+    const radiusMultiplier = p.random(1, 3);
     // Place the satellite at a distance very close to the planet
-    const initialPosition = targetPlanet.position.copy().add(p.createVector(0, targetPlanet.radius * 2.5));
+    const initialPosition = targetPlanet.position.copy().add(p.createVector(0, targetPlanet.radius * radiusMultiplier));
     const distanceFromTarget = targetPlanet.position.dist(initialPosition);
     // Calculate the speed at which a satellite will stabily orbit the planet to form rings
     const baseSpeed = Math.sqrt((G * targetPlanet.mass) / distanceFromTarget);
@@ -209,18 +211,15 @@ const sketch = (p) => {
         position: p.createVector(firstMassX, firstMassY),
         color: [255, 220, 160],
       },
-      {
-        mass: secondaryMass,
-        radius: secondaryRadius,
-        position: p.createVector(secondMassX, secondMassY),
-        color: [180, 200, 255],
-      },
     ];
   };
 
   p.draw = () => {
-    if (p.random() < spawnProbability) {
+    if (p.random() < orbitalProbability) {
       spawnSatelliteOrbitingPlanet(masses[0]);
+    }
+    if (p.random() < spawnProbability) {
+      spawnSatelliteAtEdge(masses[0].position);
     }
 
     stepSimulation();
