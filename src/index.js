@@ -2,7 +2,8 @@ const sketch = (p) => {
   const fixedSize = 1000;
   const ringMinDistance = 10;
   const ringMaxDistance = 500;
-  const captureProbability = 0.01; // 1% chance per frame
+  const captureProbability = 0.01;
+  const capturableProbability = 0.25; // 25% chance to be capturable
   const captureBlendFactor = 0.15; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
   const minNumPlanets = 5;
   const maxNumPlanets = 8;
@@ -166,7 +167,8 @@ const sketch = (p) => {
       velocity: initialVelocity,
       acceleration: initialAcceleration,
       capturingMass: null,
-      trail: [initialPosition.copy()], // Initialize trail with starting position
+      trail: [initialPosition.copy()],
+      capturable: p.random() > capturableProbability? true : false, // Initialize trail with starting position
     };
   };
 
@@ -253,6 +255,9 @@ const sketch = (p) => {
 
   const randomlyCaptureSatellites = () => {
     satellites.forEach((satellite) => {
+      if (!satellite.capturable) {
+        return;
+      }
       // If already capturing, gradually blend velocity toward target
       if (satellite.capturingMass) {
         const targetVelocity = calculateTargetVelocity(satellite, satellite.capturingMass);
