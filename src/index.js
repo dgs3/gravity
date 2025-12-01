@@ -15,6 +15,7 @@ const sketch = (p) => {
   const stepsPerFrame = 10;
   const maxSatellites = 5000;
   const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
+  const maxTrailLength = 100; // Maximum number of positions to store in satellite trail
   const spawnRadius = fixedSize * 0.48;
   const spawnProbability = 0.2;
 
@@ -162,6 +163,7 @@ const sketch = (p) => {
       velocity: initialVelocity,
       acceleration: initialAcceleration,
       capturingMass: null,
+      trail: [initialPosition.copy()], // Initialize trail with starting position
     };
   };
 
@@ -263,6 +265,13 @@ const sketch = (p) => {
         satellite.acceleration = newAcceleration;
       });
     }
+    // Update trails once per frame (after all physics steps)
+    satellites.forEach((satellite) => {
+      satellite.trail.push(satellite.position.copy());
+      if (satellite.trail.length > maxTrailLength) {
+        satellite.trail.shift(); // Remove oldest position
+      }
+    });
     // Correct orbits once per frame (after all physics steps)
     randomlyCaptureSatellites();
   };
@@ -283,6 +292,33 @@ const sketch = (p) => {
       pg.ellipse(body.position.x, body.position.y, radius * 2, radius * 2);
     });
 
+    // Render satellite trails
+    satellites.forEach((satellite) => {
+      if (satellite.trail && satellite.trail.length > 1) {
+        const ctx = pg.drawingContext;
+        const startPos = satellite.trail[0];
+        const endPos = satellite.trail[satellite.trail.length - 1];
+        
+        // Create gradient from transparent (oldest) to opaque (newest)
+        const gradient = ctx.createLinearGradient(
+          startPos.x, startPos.y,
+          endPos.x, endPos.y
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Transparent at start (oldest)
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.8)'); // Semi-opaque at end (newest)
+        
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 1 / scaleUnit; // Scale line width with zoom
+        ctx.beginPath();
+        ctx.moveTo(satellite.trail[0].x, satellite.trail[0].y);
+        for (let i = 1; i < satellite.trail.length; i += 1) {
+          ctx.lineTo(satellite.trail[i].x, satellite.trail[i].y);
+        }
+        ctx.stroke();
+      }
+    });
+
+    // Render satellite points
     pg.stroke('white');
     pg.strokeWeight(2);
     satellites.forEach((satellite) => {
