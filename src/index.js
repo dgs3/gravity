@@ -337,6 +337,42 @@ const sketch = (p) => {
     randomlyUncaptureSatellites();
   };
 
+  const drawGasGiant = (body) => {
+    const [r, g, b] = body.color;
+    const radius = getBodyRadius(body);
+    const centerX = body.position.x;
+    const centerY = body.position.y;
+    
+    // Draw gas giant with horizontal bands
+    pg.push();
+    pg.translate(centerX, centerY);
+    
+    // Draw bands from top to bottom
+    for (let y = -radius; y < radius; y += 1.5) {
+      // Calculate width of band at this y position (circular cross-section)
+      const xWidth = Math.sqrt(radius * radius - y * y);
+      
+      // Use noise to create banding pattern (Jupiter-like)
+      const noiseX = centerX * 0.01;
+      const noiseY = (centerY + y) * 0.02;
+      const noiseTime = p.frameCount * 0.05; // Slow animation
+      const noiseValue = p.noise(noiseX, noiseY, noiseTime);
+      
+      // Vary color based on noise (Jupiter-like color variation)
+      const colorVariation = (noiseValue - 0.5) * 40;
+      const bandR = p.constrain(r + colorVariation, 150, 255);
+      const bandG = p.constrain(g + colorVariation * 0.7, 120, 220);
+      const bandB = p.constrain(b + colorVariation * 0.5, 80, 180);
+      
+      pg.fill(bandR, bandG, bandB);
+      
+      // Draw thin horizontal ellipse (creates circular band)
+      pg.ellipse(0, y, xWidth * 2, 1.5);
+    }
+    
+    pg.pop();
+  };
+
   const renderScene = () => {
     pg.push();
     pg.clear();
@@ -345,10 +381,7 @@ const sketch = (p) => {
 
     pg.noStroke();
     masses.forEach((body) => {
-      const [r, g, b] = body.color;
-      const radius = getBodyRadius(body);
-      pg.fill(r, g, b);
-      pg.ellipse(body.position.x, body.position.y, radius * 2, radius * 2);
+      drawGasGiant(body);
     });
 
     // Render dying trails (fading out after collision)
