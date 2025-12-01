@@ -3,8 +3,9 @@ const sketch = (p) => {
   const ringMinDistance = 10;
   const ringMaxDistance = 500;
   const captureProbability = 0.01;
-  const capturableProbability = 0.25; // 25% chance to be capturable
-  const captureBlendFactor = 0.15; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
+  const captureBlendFactor = 0.15;
+  const capturableProbability = 0.1; // 25% chance to be capturable
+  const uncaptureProbability = 0.001; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
   const minNumPlanets = 5;
   const maxNumPlanets = 8;
   let scaleUnit;
@@ -141,8 +142,7 @@ const sketch = (p) => {
     return planets;
   };
 
-
-  const createSatellite = (initialPosition, targetPosition) => {
+  const calculateInitialVelocity = (initialPosition, targetPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
     // Use average mass for edge-spawned satellites
     const avgMass = masses.reduce((sum, body) => sum + body.mass, 0) / masses.length;
@@ -159,6 +159,12 @@ const sketch = (p) => {
       .mult(baseSpeed);
     // Combine both components to get the starting velocity vector.
     const initialVelocity = approachVelocity.add(tangentialVelocity);
+    return initialVelocity;
+  };
+
+
+  const createSatellite = (initialPosition, targetPosition) => {
+    const initialVelocity = calculateInitialVelocity(initialPosition, targetPosition);
     const initialAcceleration = computeAcceleration(initialPosition.copy());
 
     return {
@@ -253,6 +259,15 @@ const sketch = (p) => {
     return tangentialDirection.copy().mult(baseSpeed);
   };
 
+  const randomlyUncaptureSatellites = () => {
+    satellites.forEach((satellite) => {
+      if (p.random() < uncaptureProbability) {
+        satellite.capturingMass = null;
+        satellite.capturable = false;
+      }
+    });
+  };
+
   const randomlyCaptureSatellites = () => {
     satellites.forEach((satellite) => {
       if (!satellite.capturable) {
@@ -318,6 +333,7 @@ const sketch = (p) => {
     });
     // Correct orbits once per frame (after all physics steps)
     randomlyCaptureSatellites();
+    randomlyUncaptureSatellites();
   };
 
   const renderScene = () => {
