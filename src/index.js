@@ -2,9 +2,9 @@ const sketch = (p) => {
   const fixedSize = 1000;
   const ringMinDistance = 10;
   const ringMaxDistance = 500;
-  const captureProbability = 0.01;
   const captureBlendFactor = 0.15;
-  const capturableProbability = 0.1; // 25% chance to be capturable
+  const capturableProbability = 0.25; // 25% chance to be capturable
+  const captureProbability = 0.1;
   const uncaptureProbability = 0.001; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
   const minNumPlanets = 5;
   const maxNumPlanets = 8;
