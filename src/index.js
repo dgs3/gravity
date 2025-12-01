@@ -1,5 +1,7 @@
 const sketch = (p) => {
   const fixedSize = 1000;
+  const ringMinDistance = 200;
+  const ringMaxDistance = 10000;
   let scaleUnit;
   let pg;
 
@@ -12,8 +14,7 @@ const sketch = (p) => {
   const spawnProbability = 0.2;
   const orbitalProbability = 0.05; // Probability of a satellite orbiting a planet
   const maxSatellites = 5000;
-  const minPlanetSpacingMultiplier = 5; // Minimum gap between planets is 3x the new planet's radius
-  const energyDamping = 0.99995; // Energy loss per frame (smaller = more damping, helps stabilize orbits)
+  const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
 
   let masses = [];
   let satellites = [];
@@ -68,79 +69,61 @@ const sketch = (p) => {
     );
   };
 
-  // Get the minimum distance between a planet and the nearest existing planet
-  const getMinimumDistance = (planet, existingPlanets) => {
-    if (existingPlanets.length === 0) return Infinity;
-    return Math.min(...existingPlanets.map((existing) => {
-      const distance = planet.position.dist(existing.position);
-      // Minimum distance: planet radius + gap (minPlanetSpacingMultiplier x planet radius) + existing planet radius
-      const minSeparation = planet.radius + (planet.radius * minPlanetSpacingMultiplier) + existing.radius;
-      return distance - minSeparation;
-    }));
-  };
-
-  const tryPlacePlanet = (newPlanet, existingPlanets, maxAttempts = 100) => {
-    const halfSize = fixedSize / 2;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const x = p.random(-halfSize + newPlanet.radius, halfSize - newPlanet.radius);
-      const y = p.random(-halfSize + newPlanet.radius, halfSize - newPlanet.radius);
-      newPlanet.position = p.createVector(x, y);
-
-      if (!isPlanetWithinBounds(newPlanet)) {
-        continue; // Skip if out of bounds
-      }
-
-      const minDistance = getMinimumDistance(newPlanet, existingPlanets);
-      if (minDistance >= 0) {
-        return true; // Successfully placed
-      }
-    }
-    return false; // Failed to place after max attempts
-  };
-
   const createAllPlanets = () => {
-    const numPlanets = Math.floor(p.random(3, 7)); // Random number between 3-6 (minimum matches clusterSize max)
     const planets = [];
     const halfSize = fixedSize / 2;
 
-    // Randomly decide how many planets to place in cluster (2 or 3)
-    const clusterSize = Math.floor(p.random(2, 4)); // Random number between 2-3
+    // Grid-based placement
+    const gridSize = 4; // 4x4 grid = 16 possible positions
+    const cellSize = fixedSize / gridSize;
+    const cellMargin = cellSize * 0.3; // Margin within each cell
 
-    // First, create a cluster of 2 or 3 planets close together
-    // Use a conservative margin to ensure planets fit even with their radii
-    const maxRadius = 80; // Maximum possible planet radius
-    const clusterMargin = maxRadius * 2; // Extra margin for cluster placement
-    const clusterCenterX = p.random(-halfSize + clusterMargin, halfSize - clusterMargin);
-    const clusterCenterY = p.random(-halfSize + clusterMargin, halfSize - clusterMargin);
-    const clusterSpread = fixedSize * 0.15; // How close the clustered planets are
-
-    // Place planets in cluster
-    for (let i = 0; i < clusterSize; i += 1) {
-      const attrs = createRandomPlanetAttributes();
-      let planet = { ...attrs, position: p.createVector(0, 0) };
-      
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        planet.position = p.createVector(
-          clusterCenterX + p.random(-clusterSpread, clusterSpread),
-          clusterCenterY + p.random(-clusterSpread, clusterSpread),
-        );
-        if (!isPlanetWithinBounds(planet)) {
-          continue;
-        }
-        const minDistance = getMinimumDistance(planet, planets);
-        if (minDistance >= 0) {
-          break;
-        }
+    // Shuffle grid positions for randomness
+    const gridPositions = [];
+    for (let x = 0; x < gridSize; x += 1) {
+      for (let y = 0; y < gridSize; y += 1) {
+        gridPositions.push({ x, y });
       }
-      planets.push(planet);
+    }
+    // Shuffle the grid positions
+    for (let i = gridPositions.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(p.random(i + 1));
+      [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
     }
 
-    // Place remaining planets with proper spacing
-    for (let i = clusterSize; i < numPlanets; i += 1) {
+    // Place planets in grid cells
+    const numPlanets = Math.floor(p.random(5, 10)); // Random number of planets
+    for (let i = 0; i < numPlanets && i < gridPositions.length; i += 1) {
+      const gridPos = gridPositions[i];
+      const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
+      const cellCenterY = -halfSize + (gridPos.y + 0.5) * cellSize;
+
+      // Random position within cell (with margin)
       const attrs = createRandomPlanetAttributes();
-      const newPlanet = { ...attrs, position: p.createVector(0, 0) };
-      if (tryPlacePlanet(newPlanet, planets)) {
-        planets.push(newPlanet);
+      const planet = {
+        ...attrs,
+        position: p.createVector(
+          cellCenterX + p.random(-cellMargin, cellMargin),
+          cellCenterY + p.random(-cellMargin, cellMargin),
+        ),
+      };
+
+      // Simple validation: check if far enough from existing planets
+      let isValid = true;
+      if (isPlanetWithinBounds(planet)) {
+        for (const existing of planets) {
+          const distance = planet.position.dist(existing.position);
+          if (distance < fixedMinPlanetDistance) {
+            isValid = false;
+            break;
+          }
+        }
+      } else {
+        isValid = false;
+      }
+
+      if (isValid) {
+        planets.push(planet);
       }
     }
 
@@ -198,13 +181,8 @@ const sketch = (p) => {
     };
   };
 
-  const spawnSatelliteOrbitingPlanet = (targetPlanet) => {
-    satellites.push(createSatelliteOrbitingPlanet(targetPlanet));
-  };
-
   const spawnSatelliteAtEdge = (targetPosition) => {
-    // const side = Math.floor(p.random(4));
-    const side = 0;
+    const side = Math.floor(p.random(4));
     const range = spawnRadius;
     let spawnPosition;
 
@@ -260,18 +238,6 @@ const sketch = (p) => {
         satellite.acceleration = newAcceleration;
       });
     }
-    // Apply energy damping once per frame (after all steps) to help stabilize orbits
-    // Only apply to orbital satellites that are far from their target to help them settle
-    satellites.forEach((satellite) => {
-      if (satellite.targetPlanet) {
-        const distanceFromTarget = satellite.position.dist(satellite.targetPlanet.position);
-        const spawnDistance = satellite.targetPlanet.radius * 3.5; // Average spawn distance
-        // Only damp if satellite is further than spawn distance (elliptical orbit)
-        if (distanceFromTarget > spawnDistance * 1.5) {
-          satellite.velocity.mult(energyDamping);
-        }
-      }
-    });
   };
 
   const renderScene = () => {
@@ -318,10 +284,6 @@ const sketch = (p) => {
   };
 
   p.draw = () => {
-    if (p.random() < orbitalProbability) {
-      const randomPlanet = masses[Math.floor(p.random(masses.length))];
-      spawnSatelliteOrbitingPlanet(randomPlanet);
-    }
     if (p.random() < spawnProbability) {
       const randomPlanet = masses[Math.floor(p.random(masses.length))];
       spawnSatelliteAtEdge(randomPlanet.position);
