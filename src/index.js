@@ -2,15 +2,16 @@ const sketch = (p) => {
   const fixedSize = 1000;
   const ringMinDistance = 10;
   const ringMaxDistance = 1000;
-  const minNumPlanets = 4;
-  const maxNumPlanets = 6;
+  const captureProbability = 0.001; // 1% chance per frame
+  const minNumPlanets = 5;
+  const maxNumPlanets = 8;
   let scaleUnit;
   let pg;
 
   const G = 1;
   const satelliteMass = .25;
-  const satelliteVelocityMultiplierMin = 1;
-  const satelliteVelocityMultiplierMax = 5;
+  const satelliteVelocityMultiplierMin = .85;
+  const satelliteVelocityMultiplierMax = 1.25;
   const dt = 0.01;
   const stepsPerFrame = 10;
   const maxSatellites = 5000;
@@ -21,6 +22,7 @@ const sketch = (p) => {
 
   let masses = [];
   let satellites = [];
+  let dyingTrails = []; // Trails of collided satellites that are fading out
 
   const computeAcceleration = (satellite) => {
     const totalAcceleration = p.createVector(0, 0);
@@ -197,19 +199,36 @@ const sketch = (p) => {
   const cullCollidedSatellites = () => {
     const satelliteRadius = getSatelliteRadius();
     satellites = satellites.filter((sat) => {
-      return !masses.some((body) => {
+      const collisionBody = masses.find((body) => {
         const bodyRadius = getBodyRadius(body);
         const distance = sat.position.dist(body.position);
-        const hasCollision = distance <= bodyRadius + satelliteRadius;
-        const hasEjected = distance >= fixedSize * 3
-        return hasCollision || hasEjected;
+        return distance <= bodyRadius + satelliteRadius;
       });
+      
+      const ejected = masses.some((body) => {
+        const distance = sat.position.dist(body.position);
+        return distance >= fixedSize * 3;
+      });
+      
+      // If collided, extract trail to dyingTrails
+      if (collisionBody && sat.trail && sat.trail.length > 0) {
+        dyingTrails.push({
+          trail: sat.trail.map((pos) => pos.copy()), // Copy trail positions
+          fadeTime: 60, // Frames to fade out
+        });
+        return false; // Remove satellite
+      }
+      
+      // If ejected, just remove (no trail fade)
+      if (ejected) {
+        return false;
+      }
+      
+      return true; // Keep satellite
     });
   };
 
   const randomlyCaptureSatellites = () => {
-    const correctionProbability = 0.5; // 1% chance per frame
-
     satellites.forEach((satellite) => {
       if (satellite.capturingMass) {
         return;
@@ -221,7 +240,7 @@ const sketch = (p) => {
       // Check if satellite is within ring distance range
       if (minDistance >= ringMinDistance && minDistance <= ringMaxDistance) {
         // 1% chance to correct orbit
-        if (p.random() < correctionProbability) {
+        if (p.random() < captureProbability) {
           // Calculate perfect circular orbit velocity
           const baseSpeed = Math.sqrt((G * closestPlanet.mass) / minDistance);
           const vectorToPlanet = closestPlanet.position.copy().sub(satellite.position).normalize();
@@ -292,6 +311,34 @@ const sketch = (p) => {
       pg.ellipse(body.position.x, body.position.y, radius * 2, radius * 2);
     });
 
+    // Render dying trails (fading out after collision)
+    dyingTrails.forEach((dying) => {
+      if (dying.trail && dying.trail.length > 1) {
+        const ctx = pg.drawingContext;
+        const startPos = dying.trail[0];
+        const endPos = dying.trail[dying.trail.length - 1];
+        const maxFadeTime = 60;
+        const alpha = (dying.fadeTime / maxFadeTime) * 0.8; // Fade from 0.8 to 0
+        
+        // Create gradient from transparent (oldest) to fading (newest)
+        const gradient = ctx.createLinearGradient(
+          startPos.x, startPos.y,
+          endPos.x, endPos.y
+        );
+        gradient.addColorStop(0, `rgba(255, 255, 255, 0)`); // Transparent at start
+        gradient.addColorStop(1, `rgba(255, 255, 255, ${alpha})`); // Fading at end
+        
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 1 / scaleUnit;
+        ctx.beginPath();
+        ctx.moveTo(dying.trail[0].x, dying.trail[0].y);
+        for (let i = 1; i < dying.trail.length; i += 1) {
+          ctx.lineTo(dying.trail[i].x, dying.trail[i].y);
+        }
+        ctx.stroke();
+      }
+    });
+
     // Render satellite trails
     satellites.forEach((satellite) => {
       if (satellite.trail && satellite.trail.length > 1) {
@@ -354,6 +401,11 @@ const sketch = (p) => {
 
     stepSimulation();
     cullCollidedSatellites();
+    // Update dying trails (decrement fadeTime, remove when done)
+    dyingTrails = dyingTrails.filter((dying) => {
+      dying.fadeTime -= 1;
+      return dying.fadeTime > 0;
+    });
     renderScene();
   };
 
