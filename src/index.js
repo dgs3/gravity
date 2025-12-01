@@ -221,6 +221,41 @@ const sketch = (p) => {
     });
   };
 
+  const randomlyCaptureSatellites = () => {
+    const correctionProbability = 0.01; // 1% chance per frame
+
+    satellites.forEach((satellite) => {
+    // Find the closest planetary mass
+      let closestPlanet = masses[0];
+      let minDistance = satellite.position.dist(masses[0].position);
+
+      for (let i = 1; i < masses.length; i += 1) {
+        const distance = satellite.position.dist(masses[i].position);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestPlanet = masses[i];
+        }
+      }
+
+      // Check if satellite is within ring distance range
+      if (minDistance >= ringMinDistance && minDistance <= ringMaxDistance) {
+        // 1% chance to correct orbit
+        if (p.random() < correctionProbability) {
+          // Calculate perfect circular orbit velocity
+          const baseSpeed = Math.sqrt((G * closestPlanet.mass) / minDistance);
+          const vectorToPlanet = closestPlanet.position.copy().sub(satellite.position).normalize();
+          
+          // Tangential direction (perpendicular to radius) - randomize clockwise/counterclockwise
+          const clockwise = p.random() < 0.5;
+          const tangentialDirection = vectorToPlanet.copy().rotate(clockwise ? p.HALF_PI : -p.HALF_PI).normalize();
+          
+          // Set velocity to perfect circular orbit
+          satellite.velocity = tangentialDirection.copy().mult(baseSpeed);
+        }
+      }
+    });
+  };
+
   const stepSimulation = () => {
     for (let i = 0; i < stepsPerFrame; i += 1) {
       satellites.forEach((satellite) => {
@@ -238,6 +273,8 @@ const sketch = (p) => {
         satellite.acceleration = newAcceleration;
       });
     }
+    // Correct orbits once per frame (after all physics steps)
+    randomlyCaptureSatellites();
   };
 
   const renderScene = () => {
