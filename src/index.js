@@ -1,29 +1,31 @@
 const sketch = (p) => {
   const fixedSize = 1000;
-  const ringMinDistance = 200;
-  const ringMaxDistance = 10000;
+  const ringMinDistance = 10;
+  const ringMaxDistance = 1000;
+  const minNumPlanets = 4;
+  const maxNumPlanets = 6;
   let scaleUnit;
   let pg;
 
   const G = 1;
   const satelliteMass = .25;
-  // How far from the center the satellite spawns
-  const spawnRadius = fixedSize * 0.48;
+  const satelliteVelocityMultiplierMin = 1;
+  const satelliteVelocityMultiplierMax = 5;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const spawnProbability = 0.2;
-  const orbitalProbability = 0.05; // Probability of a satellite orbiting a planet
   const maxSatellites = 5000;
   const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
+  const spawnRadius = fixedSize * 0.48;
+  const spawnProbability = 0.2;
 
   let masses = [];
   let satellites = [];
 
-  const computeAcceleration = (position) => {
+  const computeAcceleration = (satellite) => {
     const totalAcceleration = p.createVector(0, 0);
-
-    masses.forEach((body) => {
-      const direction = body.position.copy().sub(position);
+    const affectingMasses = satellite.capturingMass ? [satellite.capturingMass] : masses;
+    affectingMasses.forEach((body) => {
+      const direction = body.position.copy().sub(satellite.position);
       const distanceSq = Math.max(direction.magSq(), 0.25);
       const distance = Math.sqrt(distanceSq);
 
@@ -92,7 +94,7 @@ const sketch = (p) => {
     }
 
     // Place planets in grid cells
-    const numPlanets = Math.floor(p.random(5, 10)); // Random number of planets
+    const numPlanets = Math.floor(p.random(minNumPlanets, maxNumPlanets)); // Random number of planets
     for (let i = 0; i < numPlanets && i < gridPositions.length; i += 1) {
       const gridPos = gridPositions[i];
       const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
@@ -100,12 +102,16 @@ const sketch = (p) => {
 
       // Random position within cell (with margin)
       const attrs = createRandomPlanetAttributes();
+      let planetX = cellCenterX + p.random(-cellMargin, cellMargin);
+      let planetY = cellCenterY + p.random(-cellMargin, cellMargin);
+
+      // Clamp position to ensure planet (including radius) stays within bounds
+      planetX = p.constrain(planetX, -halfSize + attrs.radius, halfSize - attrs.radius);
+      planetY = p.constrain(planetY, -halfSize + attrs.radius, halfSize - attrs.radius);
+
       const planet = {
         ...attrs,
-        position: p.createVector(
-          cellCenterX + p.random(-cellMargin, cellMargin),
-          cellCenterY + p.random(-cellMargin, cellMargin),
-        ),
+        position: p.createVector(planetX, planetY),
       };
 
       // Simple validation: check if far enough from existing planets
@@ -130,35 +136,13 @@ const sketch = (p) => {
     return planets;
   };
 
-  // Create a satellite that orbits a planet
-  const createSatelliteOrbitingPlanet = (targetPlanet) => {
-    const radiusMultiplier = p.random(1, 2);
-    // Place the satellite at a distance very close to the planet
-    const initialPosition = targetPlanet.position.copy().add(p.createVector(0, targetPlanet.radius * radiusMultiplier));
-    const distanceFromTarget = targetPlanet.position.dist(initialPosition);
-    // Calculate the speed at which a satellite will stabily orbit the planet to form rings
-    const baseSpeed = Math.sqrt((G * targetPlanet.mass) / distanceFromTarget);
-    const vectorToPlanet = targetPlanet.position.copy().sub(initialPosition).normalize();
-    // Calculate the tangential direction of the satellite's velocity
-    const tangentialDiection = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
-    // Calculate the initial velocity of the satellite
-    const initialVelocity = tangentialDiection.copy().mult(baseSpeed);
-    // Calculate the initial acceleration of the satellite
-    const initialAcceleration = computeAcceleration(initialPosition.copy());
-    return {
-      mass: satelliteMass,
-      position: initialPosition.copy(),
-      velocity: initialVelocity,
-      acceleration: initialAcceleration,
-    };
-  };
 
   const createSatellite = (initialPosition, targetPosition) => {
     // Use the distance from the origin to compute the circular-orbit speed at that radius.
     // Use average mass for edge-spawned satellites
     const avgMass = masses.reduce((sum, body) => sum + body.mass, 0) / masses.length;
     const distanceFromTarget = targetPosition.dist(initialPosition);
-    const baseSpeed = Math.sqrt((G * avgMass) / distanceFromTarget);
+    const baseSpeed = Math.sqrt((G * avgMass) / distanceFromTarget) * p.random(satelliteVelocityMultiplierMin, satelliteVelocityMultiplierMax);
 
     // Unit vector pointing straight toward the central mass (radial inbound direction).
     const toCenter = initialPosition.copy().mult(-1).normalize();
@@ -167,8 +151,7 @@ const sketch = (p) => {
     // Tangential component curves the path so the satellite can swing into orbit.
     const tangentialVelocity = toCenter
       .copy()
-      .rotate(p.PI * .75)
-      .mult(baseSpeed * 0.85);
+      .mult(baseSpeed);
     // Combine both components to get the starting velocity vector.
     const initialVelocity = approachVelocity.add(tangentialVelocity);
     const initialAcceleration = computeAcceleration(initialPosition.copy());
@@ -178,6 +161,7 @@ const sketch = (p) => {
       position: initialPosition.copy(),
       velocity: initialVelocity,
       acceleration: initialAcceleration,
+      capturingMass: null,
     };
   };
 
@@ -222,21 +206,16 @@ const sketch = (p) => {
   };
 
   const randomlyCaptureSatellites = () => {
-    const correctionProbability = 0.01; // 1% chance per frame
+    const correctionProbability = 0.5; // 1% chance per frame
 
     satellites.forEach((satellite) => {
-    // Find the closest planetary mass
-      let closestPlanet = masses[0];
-      let minDistance = satellite.position.dist(masses[0].position);
-
-      for (let i = 1; i < masses.length; i += 1) {
-        const distance = satellite.position.dist(masses[i].position);
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestPlanet = masses[i];
-        }
+      if (satellite.capturingMass) {
+        return;
       }
-
+      const closestPlanet = masses.reduce((closest, body) => {
+        return satellite.position.dist(body.position) < satellite.position.dist(closest.position) ? body : closest;
+      }, masses[0]);
+      const minDistance = satellite.position.dist(closestPlanet.position);
       // Check if satellite is within ring distance range
       if (minDistance >= ringMinDistance && minDistance <= ringMaxDistance) {
         // 1% chance to correct orbit
@@ -245,12 +224,23 @@ const sketch = (p) => {
           const baseSpeed = Math.sqrt((G * closestPlanet.mass) / minDistance);
           const vectorToPlanet = closestPlanet.position.copy().sub(satellite.position).normalize();
           
-          // Tangential direction (perpendicular to radius) - randomize clockwise/counterclockwise
-          const clockwise = p.random() < 0.5;
-          const tangentialDirection = vectorToPlanet.copy().rotate(clockwise ? p.HALF_PI : -p.HALF_PI).normalize();
+          // Calculate both tangential directions (clockwise and counterclockwise)
+          const tangentialCW = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
+          const tangentialCCW = vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
           
-          // Set velocity to perfect circular orbit
+          // Get current velocity direction
+          const currentVelocityDir = satellite.velocity.copy().normalize();
+          
+          // Calculate angle differences using dot product (closer to 1 = more aligned)
+          const dotCW = currentVelocityDir.dot(tangentialCW);
+          const dotCCW = currentVelocityDir.dot(tangentialCCW);
+          
+          // Choose the tangential direction closest to current velocity
+          const tangentialDirection = dotCW > dotCCW ? tangentialCW : tangentialCCW;
+          
+          // Set velocity to perfect circular orbit (smooth transition)
           satellite.velocity = tangentialDirection.copy().mult(baseSpeed);
+          satellite.capturingMass = closestPlanet;
         }
       }
     });
@@ -263,7 +253,7 @@ const sketch = (p) => {
         const accelerationDelta = satellite.acceleration.copy().mult(0.5 * dt * dt);
         satellite.position.add(positionDelta).add(accelerationDelta);
 
-        const newAcceleration = computeAcceleration(satellite.position);
+        const newAcceleration = computeAcceleration(satellite);
         const velocityDelta = satellite.acceleration
           .copy()
           .add(newAcceleration)
