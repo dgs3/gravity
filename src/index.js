@@ -3,6 +3,7 @@ const sketch = (p) => {
   const ringMinDistance = 10;
   const ringMaxDistance = 500;
   const captureBlendFactor = 0.15;
+  const spawnProbability = 0.5;
   const capturableProbability = 0.25; // 25% chance to be capturable
   const captureProbability = 0.1;
   const uncaptureProbability = 0.001; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
@@ -17,11 +18,11 @@ const sketch = (p) => {
   const satelliteVelocityMultiplierMax = 1.25;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const maxSatellites = 1000;
+  const numSatellitesRange = 50
+  const maxSatellites = 50 + Math.floor(p.random(numSatellitesRange));
   const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
   const maxTrailLength = 100; // Maximum number of positions to store in satellite trail
   const spawnRadius = fixedSize * 0.75;
-  const spawnProbability = 0.2;
 
   let masses = [];
   let satellites = [];
@@ -337,8 +338,6 @@ const sketch = (p) => {
   };
 
   const renderScene = () => {
-    const satelliteRadius = getSatelliteRadius();
-
     pg.push();
     pg.clear();
     pg.translate(pg.width / 2, pg.height / 2);
@@ -435,7 +434,7 @@ const sketch = (p) => {
   };
 
   p.draw = () => {
-    if (p.random() < spawnProbability) {
+    if (satellites.length < maxSatellites && p.random() < spawnProbability) {
       const randomPlanet = masses[Math.floor(p.random(masses.length))];
       spawnSatelliteAtEdge(randomPlanet.position);
     }
