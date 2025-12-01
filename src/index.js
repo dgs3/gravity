@@ -1,8 +1,9 @@
 const sketch = (p) => {
   const fixedSize = 1000;
   const ringMinDistance = 10;
-  const ringMaxDistance = 1000;
-  const captureProbability = 0.001; // 1% chance per frame
+  const ringMaxDistance = 500;
+  const captureProbability = 0.01; // 1% chance per frame
+  const captureBlendFactor = 0.15; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
   const minNumPlanets = 5;
   const maxNumPlanets = 8;
   let scaleUnit;
@@ -14,10 +15,10 @@ const sketch = (p) => {
   const satelliteVelocityMultiplierMax = 1.25;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const maxSatellites = 5000;
+  const maxSatellites = 1000;
   const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
   const maxTrailLength = 100; // Maximum number of positions to store in satellite trail
-  const spawnRadius = fixedSize * 0.48;
+  const spawnRadius = fixedSize * 0.75;
   const spawnProbability = 0.2;
 
   let masses = [];
@@ -228,39 +229,58 @@ const sketch = (p) => {
     });
   };
 
+  const calculateTargetVelocity = (satellite, planet) => {
+    const distance = satellite.position.dist(planet.position);
+    const baseSpeed = Math.sqrt((G * planet.mass) / distance);
+    const vectorToPlanet = planet.position.copy().sub(satellite.position).normalize();
+    
+    // Calculate both tangential directions (clockwise and counterclockwise)
+    const tangentialCW = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
+    const tangentialCCW = vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
+    
+    // Get current velocity direction
+    const currentVelocityDir = satellite.velocity.copy().normalize();
+    
+    // Calculate angle differences using dot product (closer to 1 = more aligned)
+    const dotCW = currentVelocityDir.dot(tangentialCW);
+    const dotCCW = currentVelocityDir.dot(tangentialCCW);
+    
+    // Choose the tangential direction closest to current velocity
+    const tangentialDirection = dotCW > dotCCW ? tangentialCW : tangentialCCW;
+    
+    return tangentialDirection.copy().mult(baseSpeed);
+  };
+
   const randomlyCaptureSatellites = () => {
     satellites.forEach((satellite) => {
+      // If already capturing, gradually blend velocity toward target
       if (satellite.capturingMass) {
+        const targetVelocity = calculateTargetVelocity(satellite, satellite.capturingMass);
+        // Gradually blend current velocity toward target velocity
+        satellite.velocity.lerp(targetVelocity, captureBlendFactor);
         return;
       }
+      
+      // Check for new capture opportunities
       const closestPlanet = masses.reduce((closest, body) => {
         return satellite.position.dist(body.position) < satellite.position.dist(closest.position) ? body : closest;
       }, masses[0]);
       const minDistance = satellite.position.dist(closestPlanet.position);
+      
       // Check if satellite is within ring distance range
       if (minDistance >= ringMinDistance && minDistance <= ringMaxDistance) {
-        // 1% chance to correct orbit
-        if (p.random() < captureProbability) {
-          // Calculate perfect circular orbit velocity
-          const baseSpeed = Math.sqrt((G * closestPlanet.mass) / minDistance);
-          const vectorToPlanet = closestPlanet.position.copy().sub(satellite.position).normalize();
-          
-          // Calculate both tangential directions (clockwise and counterclockwise)
-          const tangentialCW = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
-          const tangentialCCW = vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
-          
-          // Get current velocity direction
-          const currentVelocityDir = satellite.velocity.copy().normalize();
-          
-          // Calculate angle differences using dot product (closer to 1 = more aligned)
-          const dotCW = currentVelocityDir.dot(tangentialCW);
-          const dotCCW = currentVelocityDir.dot(tangentialCCW);
-          
-          // Choose the tangential direction closest to current velocity
-          const tangentialDirection = dotCW > dotCCW ? tangentialCW : tangentialCCW;
-          
-          // Set velocity to perfect circular orbit (smooth transition)
-          satellite.velocity = tangentialDirection.copy().mult(baseSpeed);
+        // Check if velocity is somewhat tangential to the planet
+        const radiusVector = closestPlanet.position.copy().sub(satellite.position).normalize();
+        const velocityDir = satellite.velocity.copy().normalize();
+        const dotProduct = radiusVector.dot(velocityDir);
+        
+        // Dot product close to 0 means perpendicular (tangential)
+        // Allow some tolerance: -0.5 to 0.5 means angle between ~60-120 degrees
+        const isTangential = Math.abs(dotProduct) < 0.5;
+        
+        // Only capture if velocity is tangential and random chance succeeds
+        if (isTangential && p.random() < captureProbability) {
+          // Mark satellite as capturing (will blend velocity gradually)
           satellite.capturingMass = closestPlanet;
         }
       }
