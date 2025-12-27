@@ -18,7 +18,7 @@ const sketch = (p) => {
   const G = 1;
   const satelliteMass = .25;
   const dt = 0.01;
-  const stepsPerFrame = 50;
+  const stepsPerFrame = 25;
   const numSatellitesRange = 200
   const maxSatellites = 800 + Math.floor(p.random(numSatellitesRange));
   const initialSatelliteCount = 200;
@@ -52,7 +52,7 @@ const sketch = (p) => {
       ay += fy;
     });
 
-    return p.createVector(ax, ay);
+    return {x: ax, y: ay};
   };
 
   const getBodyRadius = (body) => body.radius;
@@ -91,7 +91,7 @@ const sketch = (p) => {
     
     const planet = {
       ...attrs,
-      position: p.createVector(positionX, positionY),
+      position: {x: positionX, y: positionY},
       rotation: 0, // Initial rotation angle
     };
     
@@ -131,27 +131,35 @@ const sketch = (p) => {
     const angle = p.random(0, p.TWO_PI);
     
     // Calculate spawn position relative to planet
-    const spawnPosition = p.createVector(
-      planet.position.x + Math.cos(angle) * orbitalDistance,
-      planet.position.y + Math.sin(angle) * orbitalDistance
-    );
+    const spawnPosition = {
+      x: planet.position.x + Math.cos(angle) * orbitalDistance,
+      y: planet.position.y + Math.sin(angle) * orbitalDistance
+    };
     
     // Calculate circular orbit velocity
     const baseSpeed = Math.sqrt((G * planet.mass) / orbitalDistance);
     
     // Tangential direction perpendicular to radius vector
-    const vectorToPlanet = planet.position.copy().sub(spawnPosition).normalize();
-    // Choose random tangential direction (clockwise or counterclockwise)
-    const tangentialDirection = laneIndex % 2 === 0 
-      ? vectorToPlanet.copy().rotate(p.HALF_PI).normalize()
-      : vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
+    const dx = planet.position.x - spawnPosition.x;
+    const dy = planet.position.y - spawnPosition.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const vectorToPlanet = {x: dx / dist, y: dy / dist};
     
-    const orbitalVelocity = tangentialDirection.copy().mult(baseSpeed);
+    // Choose random tangential direction (clockwise or counterclockwise)
+    // Rotate 90 degrees: (x, y) -> (-y, x) or (y, -x)
+    const tangentialDirection = laneIndex % 2 === 0 
+      ? {x: -vectorToPlanet.y, y: vectorToPlanet.x}
+      : {x: vectorToPlanet.y, y: -vectorToPlanet.x};
+    
+    const orbitalVelocity = {
+      x: tangentialDirection.x * baseSpeed,
+      y: tangentialDirection.y * baseSpeed
+    };
     
     // Create satellite with orbital velocity
     const satellite = {
       mass: satelliteMass,
-      position: spawnPosition.copy(),
+      position: {x: spawnPosition.x, y: spawnPosition.y},
       velocity: orbitalVelocity,
       trail: {
         positions: new Array(maxTrailLength), // Don't pre-initialize
@@ -160,7 +168,7 @@ const sketch = (p) => {
       },
     };
     // Initialize first trail position
-    satellite.trail.positions[0] = spawnPosition.copy();
+    satellite.trail.positions[0] = {x: spawnPosition.x, y: spawnPosition.y};
     
     // Calculate initial acceleration
     satellite.acceleration = computeAcceleration(satellite);
@@ -175,16 +183,15 @@ const sketch = (p) => {
   const stepSimulation = () => {
     for (let i = 0; i < stepsPerFrame; i += 1) {
       satellites.forEach((satellite) => {
-        const positionDelta = satellite.velocity.copy().mult(dt);
-        const accelerationDelta = satellite.acceleration.copy().mult(0.5 * dt * dt);
-        satellite.position.add(positionDelta).add(accelerationDelta);
+        // Update position using direct math
+        satellite.position.x += satellite.velocity.x * dt + satellite.acceleration.x * 0.5 * dt * dt;
+        satellite.position.y += satellite.velocity.y * dt + satellite.acceleration.y * 0.5 * dt * dt;
 
         const newAcceleration = computeAcceleration(satellite);
-        const velocityDelta = satellite.acceleration
-          .copy()
-          .add(newAcceleration)
-          .mult(0.5 * dt);
-        satellite.velocity.add(velocityDelta);
+        
+        // Update velocity using direct math
+        satellite.velocity.x += (satellite.acceleration.x + newAcceleration.x) * 0.5 * dt;
+        satellite.velocity.y += (satellite.acceleration.y + newAcceleration.y) * 0.5 * dt;
 
         satellite.acceleration = newAcceleration;
       });
@@ -199,7 +206,7 @@ const sketch = (p) => {
       satellites.forEach((satellite) => {
         const trail = satellite.trail;
         // Write to current index
-        trail.positions[trail.index] = satellite.position.copy();
+        trail.positions[trail.index] = {x: satellite.position.x, y: satellite.position.y};
         
         // Advance index and update length
         trail.index = (trail.index + 1) % maxTrailLength;
