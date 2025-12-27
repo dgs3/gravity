@@ -5,6 +5,13 @@ const sketch = (p) => {
   const laneMaxMultiplier = 2.0;
   const laneCountMin = 30;
   const laneCountMax = 80;
+  const laneMinRadiusMin = 1.1;
+  const laneMinRadiusMax = 1.2;
+  const laneMaxRadiusMin = 1.5; // Minimum multiplier for max lane distance
+  const laneMaxRadiusMax = 2.0; // Maximum multiplier for max lane distance
+  const laneDeltaMin = 0; // Random delta for messiness
+  const laneDeltaMax = 5;
+  const planetRotationSpeed = 0.00001; // Rotation speed per second (radians)
   let scaleUnit;
   let pg;
 
@@ -13,9 +20,9 @@ const sketch = (p) => {
   const dt = 0.01;
   const stepsPerFrame = 50;
   const numSatellitesRange = 200
-  const maxSatellites = 1000 + Math.floor(p.random(numSatellitesRange));
-  const initialSatelliteCount = 400;
-  const maxTrailLength = 800; // Maximum number of positions to store in satellite trail
+  const maxSatellites = 800 + Math.floor(p.random(numSatellitesRange));
+  const initialSatelliteCount = 200;
+  const maxTrailLength = 500; // Maximum number of positions to store in satellite trail
   const trailUpdateFrequency = 3; // Update trail every N frames
 
   let masses = [];
@@ -85,16 +92,29 @@ const sketch = (p) => {
     const planet = {
       ...attrs,
       position: p.createVector(positionX, positionY),
+      rotation: 0, // Initial rotation angle
     };
     
     // Generate orbital lanes
-    const numLanes = Math.floor(p.random(laneCountMin, laneCountMax)); // Random between 5-50
-    const lanes = [];
-    const minDistance = planet.radius * laneMinMultiplier;
-    const maxDistance = planet.radius * laneMaxMultiplier;
+    // 1. Randomly generate the number of lanes
+    const numLanes = Math.floor(p.random(laneCountMin, laneCountMax));
     
+    // 2. Randomly decide the first lane distance
+    const minRadius = planet.radius * p.random(laneMinRadiusMin, laneMinRadiusMax);
+    
+    // 3. Randomly decide the max lane distance
+    const maxRadius = planet.radius * p.random(laneMaxRadiusMin, laneMaxRadiusMax);
+    
+    // 4. Divide the total distance by the number of lanes to get spacing
+    const totalDistance = maxRadius - minRadius;
+    const spacing = numLanes > 1 ? totalDistance / (numLanes - 1) : 0;
+    
+    // 5. Generate lanes with evenly spaced positions plus random delta for messiness
+    const lanes = [];
     for (let i = 0; i < numLanes; i += 1) {
-      lanes.push(p.random(minDistance, maxDistance));
+      const baseDistance = minRadius + (i * spacing);
+      const delta = p.random(laneDeltaMin, laneDeltaMax);
+      lanes.push(baseDistance + delta);
     }
     
     planet.lanes = lanes;
@@ -168,6 +188,11 @@ const sketch = (p) => {
 
         satellite.acceleration = newAcceleration;
       });
+      
+      // Update planet rotation smoothly (updated each physics step)
+      masses.forEach((planet) => {
+        planet.rotation += planetRotationSpeed * dt;
+      });
     }
     // Update trails every N frames (after all physics steps)
     if (p.frameCount % trailUpdateFrequency === 0) {
@@ -194,6 +219,7 @@ const sketch = (p) => {
     // Draw gas giant with horizontal bands
     pg.push();
     pg.translate(centerX, centerY);
+    pg.rotate(body.rotation); // Apply rotation
     
     // Draw bands from top to bottom
     for (let y = -radius; y < radius; y += 1.5) {
@@ -217,6 +243,12 @@ const sketch = (p) => {
       // Draw thin horizontal ellipse (creates circular band)
       pg.ellipse(0, y, xWidth * 2, 1.5);
     }
+    
+    // Draw planet circumference with stroke
+    pg.noFill();
+    pg.stroke(50, 50, 50); // White stroke
+    pg.strokeWeight(1.5);
+    pg.ellipse(0, 0, radius * 2, radius * 2);
     
     pg.pop();
   };
