@@ -1,53 +1,51 @@
 const sketch = (p) => {
   const fixedSize = 1000;
-  const ringMinDistance = 10;
-  const ringMaxDistance = 500;
-  const captureBlendFactor = 0.15;
   const spawnProbability = 0.5;
-  const capturableProbability = 0.25; // 25% chance to be capturable
-  const captureProbability = 0.1;
-  const uncaptureProbability = 0.001; // How much to blend toward target velocity each frame (0.15 = ~6-7 frames to complete)
-  const minNumPlanets = 5;
-  const maxNumPlanets = 8;
+  const laneMinMultiplier = 1.1;
+  const laneMaxMultiplier = 2.0;
+  const laneCountMin = 30;
+  const laneCountMax = 80;
   let scaleUnit;
   let pg;
 
   const G = 1;
   const satelliteMass = .25;
-  const satelliteVelocityMultiplierMin = .85;
-  const satelliteVelocityMultiplierMax = 1.25;
   const dt = 0.01;
-  const stepsPerFrame = 10;
-  const numSatellitesRange = 50
-  const maxSatellites = 50 + Math.floor(p.random(numSatellitesRange));
-  const fixedMinPlanetDistance = 200; // Fixed minimum distance between planets (simplified)
-  const maxTrailLength = 100; // Maximum number of positions to store in satellite trail
-  const spawnRadius = fixedSize * 0.75;
+  const stepsPerFrame = 50;
+  const numSatellitesRange = 200
+  const maxSatellites = 1000 + Math.floor(p.random(numSatellitesRange));
+  const initialSatelliteCount = 400;
+  const maxTrailLength = 800; // Maximum number of positions to store in satellite trail
+  const trailUpdateFrequency = 3; // Update trail every N frames
 
   let masses = [];
   let satellites = [];
-  let dyingTrails = []; // Trails of collided satellites that are fading out
 
   const computeAcceleration = (satellite) => {
-    const totalAcceleration = p.createVector(0, 0);
-    const affectingMasses = satellite.capturingMass ? [satellite.capturingMass] : masses;
-    affectingMasses.forEach((body) => {
-      const direction = body.position.copy().sub(satellite.position);
-      const distanceSq = Math.max(direction.magSq(), 0.25);
+    let ax = 0;
+    let ay = 0;
+    const sx = satellite.position.x;
+    const sy = satellite.position.y;
+    
+    masses.forEach((body) => {
+      const dx = body.position.x - sx;
+      const dy = body.position.y - sy;
+      const distanceSq = Math.max(dx * dx + dy * dy, 0.25);
       const distance = Math.sqrt(distanceSq);
 
       if (distance === 0) {
         return;
       }
 
-      direction
-        .div(distance)
-        .mult((G * body.mass) / distanceSq);
-
-      totalAcceleration.add(direction);
+      const force = (G * body.mass) / distanceSq;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      
+      ax += fx;
+      ay += fy;
     });
 
-    return totalAcceleration;
+    return p.createVector(ax, ay);
   };
 
   const getBodyRadius = (body) => body.radius;
@@ -56,319 +54,102 @@ const sketch = (p) => {
 
   const PLANET_TYPES = {
     GAS_GIANT: 'gasGiant',
-    MOON: 'moon',
   };
 
-  const createPlanetAttributes = (type) => {
+  const createPlanetAttributes = () => {
     const mass = p.random(5000, 10000);
     
-    // Assign radius based on type (moons smaller, gas giants larger)
-    let radius;
-    switch (type) {
-      case PLANET_TYPES.GAS_GIANT:
-        // Gas giants: larger radius (50-80)
-        radius = p.random(50, 80);
-        break;
-      case PLANET_TYPES.MOON:
-        // Moons: smaller radius (15-40)
-        radius = p.random(15, 40);
-        break;
-      default:
-        radius = p.random(30, 80);
-    }
+    // Gas giants: larger radius (50-80)
+    const radius = p.random(50, 80);
     
-    // Generate color based on type
-    let color;
-    switch (type) {
-      case PLANET_TYPES.GAS_GIANT:
-        // Yellow-orange-red tones (Jupiter-like)
-        color = [p.random(200, 255), p.random(150, 220), p.random(100, 180)];
-        break;
-      case PLANET_TYPES.MOON:
-        // Grayish tones (moon-like)
-        color = [p.random(120, 180), p.random(120, 180), p.random(130, 190)];
-        break;
-      default:
-        color = [p.random(200, 255), p.random(150, 220), p.random(100, 180)];
-    }
+    // Yellow-orange-red tones (Jupiter-like)
+    const color = [p.random(200, 255), p.random(150, 220), p.random(100, 180)];
 
-    return { mass, radius, color, type };
+    return { mass, radius, color, type: PLANET_TYPES.GAS_GIANT };
   };
 
-  // Check if a planet is within the bounds of the canvas
-  const isPlanetWithinBounds = (planet) => {
+  const createSinglePlanet = () => {
     const halfSize = fixedSize / 2;
-    return (
-      planet.position.x >= -halfSize + planet.radius &&
-      planet.position.x <= halfSize - planet.radius &&
-      planet.position.y >= -halfSize + planet.radius &&
-      planet.position.y <= halfSize - planet.radius
-    );
-  };
-
-  const createAllPlanets = () => {
-    const planets = [];
-    const halfSize = fixedSize / 2;
-
-    // Grid-based placement
-    const gridSize = 4; // 4x4 grid = 16 possible positions
-    const cellSize = fixedSize / gridSize;
-    const cellMargin = cellSize * 0.3; // Margin within each cell
-
-    // Shuffle grid positions for randomness
-    const gridPositions = [];
-    for (let x = 0; x < gridSize; x += 1) {
-      for (let y = 0; y < gridSize; y += 1) {
-        gridPositions.push({ x, y });
-      }
-    }
-    // Shuffle the grid positions
-    for (let i = gridPositions.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(p.random(i + 1));
-      [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
-    }
-
-    // Create one gas giant first
-    let gasGiantPlaced = false;
-    let gridIndex = 0;
     
-    while (!gasGiantPlaced && gridIndex < gridPositions.length) {
-      const gridPos = gridPositions[gridIndex];
-      const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
-      const cellCenterY = -halfSize + (gridPos.y + 0.5) * cellSize;
-
-      // Random position within cell (with margin)
-      const attrs = createPlanetAttributes(PLANET_TYPES.GAS_GIANT);
-      let planetX = cellCenterX + p.random(-cellMargin, cellMargin);
-      let planetY = cellCenterY + p.random(-cellMargin, cellMargin);
-
-      // Clamp position to ensure planet (including radius) stays within bounds
-      planetX = p.constrain(planetX, -halfSize + attrs.radius, halfSize - attrs.radius);
-      planetY = p.constrain(planetY, -halfSize + attrs.radius, halfSize - attrs.radius);
-
-      const planet = {
-        ...attrs,
-        position: p.createVector(planetX, planetY),
-      };
-
-      if (isPlanetWithinBounds(planet)) {
-        planets.push(planet);
-        gasGiantPlaced = true;
-      }
-      gridIndex += 1;
-    }
-
-    // Create 2-6 moons
-    const numMoons = Math.floor(p.random(2, 7)); // 2-6 moons
-    let moonsPlaced = 0;
-    gridIndex = 0;
-
-    while (moonsPlaced < numMoons && gridIndex < gridPositions.length) {
-      const gridPos = gridPositions[gridIndex];
-      const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
-      const cellCenterY = -halfSize + (gridPos.y + 0.5) * cellSize;
-
-      // Random position within cell (with margin)
-      const attrs = createPlanetAttributes(PLANET_TYPES.MOON);
-      let planetX = cellCenterX + p.random(-cellMargin, cellMargin);
-      let planetY = cellCenterY + p.random(-cellMargin, cellMargin);
-
-      // Clamp position to ensure planet (including radius) stays within bounds
-      planetX = p.constrain(planetX, -halfSize + attrs.radius, halfSize - attrs.radius);
-      planetY = p.constrain(planetY, -halfSize + attrs.radius, halfSize - attrs.radius);
-
-      const planet = {
-        ...attrs,
-        position: p.createVector(planetX, planetY),
-      };
-
-      // Simple validation: check if far enough from existing planets
-      let isValid = true;
-      if (isPlanetWithinBounds(planet)) {
-        for (const existing of planets) {
-          const distance = planet.position.dist(existing.position);
-          if (distance < fixedMinPlanetDistance) {
-            isValid = false;
-            break;
-          }
-        }
-      } else {
-        isValid = false;
-      }
-
-      if (isValid) {
-        planets.push(planet);
-        moonsPlaced += 1;
-      }
-      gridIndex += 1;
-    }
-
-    return planets;
-  };
-
-  const calculateInitialVelocity = (initialPosition, targetPosition) => {
-    // Use the distance from the origin to compute the circular-orbit speed at that radius.
-    // Use average mass for edge-spawned satellites
-    const avgMass = masses.reduce((sum, body) => sum + body.mass, 0) / masses.length;
-    const distanceFromTarget = targetPosition.dist(initialPosition);
-    const baseSpeed = Math.sqrt((G * avgMass) / distanceFromTarget) * p.random(satelliteVelocityMultiplierMin, satelliteVelocityMultiplierMax);
-
-    // Unit vector pointing straight toward the central mass (radial inbound direction).
-    const toCenter = initialPosition.copy().mult(-1).normalize();
-    // Radial component ensures the satellite actually falls inward toward the mass.
-    const approachVelocity = toCenter.copy().mult(baseSpeed);
-    // Tangential component curves the path so the satellite can swing into orbit.
-    const tangentialVelocity = toCenter
-      .copy()
-      .mult(baseSpeed);
-    // Combine both components to get the starting velocity vector.
-    const initialVelocity = approachVelocity.add(tangentialVelocity);
-    return initialVelocity;
-  };
-
-
-  const createSatellite = (initialPosition, targetPosition) => {
-    const initialVelocity = calculateInitialVelocity(initialPosition, targetPosition);
-    const initialAcceleration = computeAcceleration(initialPosition.copy());
-
-    return {
-      mass: satelliteMass,
-      position: initialPosition.copy(),
-      velocity: initialVelocity,
-      acceleration: initialAcceleration,
-      capturingMass: null,
-      trail: [initialPosition.copy()],
-      capturable: p.random() > capturableProbability? true : false, // Initialize trail with starting position
+    // Create a large gas giant that's bigger than the canvas
+    // Radius should be large enough to fill ~1/3 of canvas when viewed
+    const attrs = createPlanetAttributes();
+    // Override radius to be large (bigger than canvas)
+    attrs.radius = fixedSize;
+    
+    // Position planet so it's in the first or second third of the canvas
+    // Center can be off-canvas, but we want part of it visible
+    const positionX = fixedSize;
+    const positionY = p.random(-halfSize, halfSize);
+    
+    const planet = {
+      ...attrs,
+      position: p.createVector(positionX, positionY),
     };
+    
+    // Generate orbital lanes
+    const numLanes = Math.floor(p.random(laneCountMin, laneCountMax)); // Random between 5-50
+    const lanes = [];
+    const minDistance = planet.radius * laneMinMultiplier;
+    const maxDistance = planet.radius * laneMaxMultiplier;
+    
+    for (let i = 0; i < numLanes; i += 1) {
+      lanes.push(p.random(minDistance, maxDistance));
+    }
+    
+    planet.lanes = lanes;
+    
+    return [planet];
   };
 
-  const spawnSatelliteAtEdge = (targetPosition) => {
-    const side = Math.floor(p.random(4));
-    const range = spawnRadius;
-    let spawnPosition;
-
-    switch (side) {
-      case 0:
-        spawnPosition = p.createVector(-spawnRadius, p.random(-range, range));
-        break;
-      case 1:
-        spawnPosition = p.createVector(spawnRadius, p.random(-range, range));
-        break;
-      case 2:
-        spawnPosition = p.createVector(p.random(-range, range), -spawnRadius);
-        break;
-      default:
-        spawnPosition = p.createVector(p.random(-range, range), spawnRadius);
-        break;
-    }
-
-    satellites.push(createSatellite(spawnPosition, targetPosition));
-
+  const spawnSatelliteInOrbit = (planet) => {
+    // Randomly select a lane from the planet's pre-generated lanes
+    const laneIndex = Math.floor(p.random(planet.lanes.length));
+    const orbitalDistance = planet.lanes[laneIndex];
+    
+    // Calculate random angle around planet
+    const angle = p.random(0, p.TWO_PI);
+    
+    // Calculate spawn position relative to planet
+    const spawnPosition = p.createVector(
+      planet.position.x + Math.cos(angle) * orbitalDistance,
+      planet.position.y + Math.sin(angle) * orbitalDistance
+    );
+    
+    // Calculate circular orbit velocity
+    const baseSpeed = Math.sqrt((G * planet.mass) / orbitalDistance);
+    
+    // Tangential direction perpendicular to radius vector
+    const vectorToPlanet = planet.position.copy().sub(spawnPosition).normalize();
+    // Choose random tangential direction (clockwise or counterclockwise)
+    const tangentialDirection = laneIndex % 2 === 0 
+      ? vectorToPlanet.copy().rotate(p.HALF_PI).normalize()
+      : vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
+    
+    const orbitalVelocity = tangentialDirection.copy().mult(baseSpeed);
+    
+    // Create satellite with orbital velocity
+    const satellite = {
+      mass: satelliteMass,
+      position: spawnPosition.copy(),
+      velocity: orbitalVelocity,
+      trail: {
+        positions: new Array(maxTrailLength), // Don't pre-initialize
+        index: 1, // Points to next write position
+        length: 1, // One position has been written
+      },
+    };
+    // Initialize first trail position
+    satellite.trail.positions[0] = spawnPosition.copy();
+    
+    // Calculate initial acceleration
+    satellite.acceleration = computeAcceleration(satellite);
+    
+    satellites.push(satellite);
+    
     if (satellites.length > maxSatellites) {
       satellites.shift();
     }
-  };
-
-  const cullCollidedSatellites = () => {
-    const satelliteRadius = getSatelliteRadius();
-    satellites = satellites.filter((sat) => {
-      const collisionBody = masses.find((body) => {
-        const bodyRadius = getBodyRadius(body);
-        const distance = sat.position.dist(body.position);
-        return distance <= bodyRadius + satelliteRadius;
-      });
-      
-      const ejected = masses.some((body) => {
-        const distance = sat.position.dist(body.position);
-        return distance >= fixedSize * 3;
-      });
-      
-      // If collided, extract trail to dyingTrails
-      if (collisionBody && sat.trail && sat.trail.length > 0) {
-        dyingTrails.push({
-          trail: sat.trail.map((pos) => pos.copy()), // Copy trail positions
-          fadeTime: 60, // Frames to fade out
-        });
-        return false; // Remove satellite
-      }
-      
-      // If ejected, just remove (no trail fade)
-      if (ejected) {
-        return false;
-      }
-      
-      return true; // Keep satellite
-    });
-  };
-
-  const calculateTargetVelocity = (satellite, planet) => {
-    const distance = satellite.position.dist(planet.position);
-    const baseSpeed = Math.sqrt((G * planet.mass) / distance);
-    const vectorToPlanet = planet.position.copy().sub(satellite.position).normalize();
-    
-    // Calculate both tangential directions (clockwise and counterclockwise)
-    const tangentialCW = vectorToPlanet.copy().rotate(p.HALF_PI).normalize();
-    const tangentialCCW = vectorToPlanet.copy().rotate(-p.HALF_PI).normalize();
-    
-    // Get current velocity direction
-    const currentVelocityDir = satellite.velocity.copy().normalize();
-    
-    // Calculate angle differences using dot product (closer to 1 = more aligned)
-    const dotCW = currentVelocityDir.dot(tangentialCW);
-    const dotCCW = currentVelocityDir.dot(tangentialCCW);
-    
-    // Choose the tangential direction closest to current velocity
-    const tangentialDirection = dotCW > dotCCW ? tangentialCW : tangentialCCW;
-    
-    return tangentialDirection.copy().mult(baseSpeed);
-  };
-
-  const randomlyUncaptureSatellites = () => {
-    satellites.forEach((satellite) => {
-      if (p.random() < uncaptureProbability) {
-        satellite.capturingMass = null;
-        satellite.capturable = false;
-      }
-    });
-  };
-
-  const randomlyCaptureSatellites = () => {
-    satellites.forEach((satellite) => {
-      if (!satellite.capturable) {
-        return;
-      }
-      // If already capturing, gradually blend velocity toward target
-      if (satellite.capturingMass) {
-        const targetVelocity = calculateTargetVelocity(satellite, satellite.capturingMass);
-        // Gradually blend current velocity toward target velocity
-        satellite.velocity.lerp(targetVelocity, captureBlendFactor);
-        return;
-      }
-      
-      // Check for new capture opportunities
-      const closestPlanet = masses.reduce((closest, body) => {
-        return satellite.position.dist(body.position) < satellite.position.dist(closest.position) ? body : closest;
-      }, masses[0]);
-      const minDistance = satellite.position.dist(closestPlanet.position);
-      
-      // Check if satellite is within ring distance range
-      if (minDistance >= ringMinDistance && minDistance <= ringMaxDistance) {
-        // Check if velocity is somewhat tangential to the planet
-        const radiusVector = closestPlanet.position.copy().sub(satellite.position).normalize();
-        const velocityDir = satellite.velocity.copy().normalize();
-        const dotProduct = radiusVector.dot(velocityDir);
-        
-        // Dot product close to 0 means perpendicular (tangential)
-        // Allow some tolerance: -0.5 to 0.5 means angle between ~60-120 degrees
-        const isTangential = Math.abs(dotProduct) < 0.5;
-        
-        // Only capture if velocity is tangential and random chance succeeds
-        if (isTangential && p.random() < captureProbability) {
-          // Mark satellite as capturing (will blend velocity gradually)
-          satellite.capturingMass = closestPlanet;
-        }
-      }
-    });
   };
 
   const stepSimulation = () => {
@@ -388,16 +169,20 @@ const sketch = (p) => {
         satellite.acceleration = newAcceleration;
       });
     }
-    // Update trails once per frame (after all physics steps)
-    satellites.forEach((satellite) => {
-      satellite.trail.push(satellite.position.copy());
-      if (satellite.trail.length > maxTrailLength) {
-        satellite.trail.shift(); // Remove oldest position
-      }
-    });
-    // Correct orbits once per frame (after all physics steps)
-    randomlyCaptureSatellites();
-    randomlyUncaptureSatellites();
+    // Update trails every N frames (after all physics steps)
+    if (p.frameCount % trailUpdateFrequency === 0) {
+      satellites.forEach((satellite) => {
+        const trail = satellite.trail;
+        // Write to current index
+        trail.positions[trail.index] = satellite.position.copy();
+        
+        // Advance index and update length
+        trail.index = (trail.index + 1) % maxTrailLength;
+        if (trail.length < maxTrailLength) {
+          trail.length++;
+        }
+      });
+    }
   };
 
   const drawGasGiant = (body) => {
@@ -436,28 +221,48 @@ const sketch = (p) => {
     pg.pop();
   };
 
-  const drawMoon = (body) => {
-    const radius = getBodyRadius(body);
-    const centerX = body.position.x;
-    const centerY = body.position.y;
-    
-    // Solid pale grey color
-    pg.fill(180, 180, 190);
-    pg.ellipse(centerX, centerY, radius * 2, radius * 2);
+  const drawPlanet = (body) => {
+    drawGasGiant(body);
   };
 
-  const drawPlanet = (body) => {
-    switch (body.type) {
-      case PLANET_TYPES.GAS_GIANT:
-        drawGasGiant(body);
-        break;
-      case PLANET_TYPES.MOON:
-        drawMoon(body);
-        break;
-      default:
-        // Fallback to gas giant if type is unknown
-        drawGasGiant(body);
-    }
+  const getVisibleSatellites = () => {
+    const halfSize = fixedSize / 2;
+    const margin = 50; // Small margin for smooth rendering
+
+    return satellites.filter((satellite) => {
+      // Check if satellite position is visible
+      const x = satellite.position.x;
+      const y = satellite.position.y;
+      const positionVisible = (
+        x >= -halfSize - margin &&
+        x <= halfSize + margin &&
+        y >= -halfSize - margin &&
+        y <= halfSize + margin
+      );
+      
+      if (positionVisible) return true;
+      
+      // Check if any point in the trail is visible
+      if (satellite.trail && satellite.trail.length > 0) {
+        const trail = satellite.trail;
+        // Iterate through trail: if not full, start at 0; if full, start at index (oldest)
+        const startIndex = trail.length < maxTrailLength ? 0 : trail.index;
+        for (let i = 0; i < trail.length; i += 1) {
+          const posIndex = (startIndex + i) % maxTrailLength;
+          const pos = trail.positions[posIndex];
+          if (pos && (
+            pos.x >= -halfSize - margin &&
+            pos.x <= halfSize + margin &&
+            pos.y >= -halfSize - margin &&
+            pos.y <= halfSize + margin
+          )) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    });
   };
 
   const renderScene = () => {
@@ -471,40 +276,21 @@ const sketch = (p) => {
       drawPlanet(body);
     });
 
-    // Render dying trails (fading out after collision)
-    dyingTrails.forEach((dying) => {
-      if (dying.trail && dying.trail.length > 1) {
-        const ctx = pg.drawingContext;
-        const startPos = dying.trail[0];
-        const endPos = dying.trail[dying.trail.length - 1];
-        const maxFadeTime = 60;
-        const alpha = (dying.fadeTime / maxFadeTime) * 0.8; // Fade from 0.8 to 0
-        
-        // Create gradient from transparent (oldest) to fading (newest)
-        const gradient = ctx.createLinearGradient(
-          startPos.x, startPos.y,
-          endPos.x, endPos.y
-        );
-        gradient.addColorStop(0, `rgba(255, 255, 255, 0)`); // Transparent at start
-        gradient.addColorStop(1, `rgba(255, 255, 255, ${alpha})`); // Fading at end
-        
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 1 / scaleUnit;
-        ctx.beginPath();
-        ctx.moveTo(dying.trail[0].x, dying.trail[0].y);
-        for (let i = 1; i < dying.trail.length; i += 1) {
-          ctx.lineTo(dying.trail[i].x, dying.trail[i].y);
-        }
-        ctx.stroke();
-      }
-    });
+    // Get visible satellites (position or trail visible)
+    const visibleSatellites = getVisibleSatellites();
 
-    // Render satellite trails
-    satellites.forEach((satellite) => {
+    // Render satellite trails (only for visible satellites)
+    visibleSatellites.forEach((satellite) => {
       if (satellite.trail && satellite.trail.length > 1) {
+        const trail = satellite.trail;
         const ctx = pg.drawingContext;
-        const startPos = satellite.trail[0];
-        const endPos = satellite.trail[satellite.trail.length - 1];
+        
+        // Get start index: if not full, start at 0; if full, start at index (oldest)
+        const startIndex = trail.length < maxTrailLength ? 0 : trail.index;
+        const oldestIndex = startIndex;
+        const newestIndex = (startIndex + trail.length - 1) % maxTrailLength;
+        const startPos = trail.positions[oldestIndex];
+        const endPos = trail.positions[newestIndex];
         
         // Create gradient from transparent (oldest) to opaque (newest)
         const gradient = ctx.createLinearGradient(
@@ -517,18 +303,27 @@ const sketch = (p) => {
         ctx.strokeStyle = gradient;
         ctx.lineWidth = 1 / scaleUnit; // Scale line width with zoom
         ctx.beginPath();
-        ctx.moveTo(satellite.trail[0].x, satellite.trail[0].y);
-        for (let i = 1; i < satellite.trail.length; i += 1) {
-          ctx.lineTo(satellite.trail[i].x, satellite.trail[i].y);
+        
+        // Draw trail from oldest to newest
+        for (let i = 0; i < trail.length; i += 1) {
+          const posIndex = (startIndex + i) % maxTrailLength;
+          const pos = trail.positions[posIndex];
+          if (pos) {
+            if (i === 0) {
+              ctx.moveTo(pos.x, pos.y);
+            } else {
+              ctx.lineTo(pos.x, pos.y);
+            }
+          }
         }
         ctx.stroke();
       }
     });
 
-    // Render satellite points
+    // Render satellite points (only for visible satellites)
     pg.stroke('white');
     pg.strokeWeight(2);
-    satellites.forEach((satellite) => {
+    visibleSatellites.forEach((satellite) => {
       pg.point(satellite.position.x, satellite.position.y);
     });
 
@@ -550,22 +345,20 @@ const sketch = (p) => {
 
     pg = p.createGraphics(w, h);
     pg.pixelDensity(2);
-    masses = createAllPlanets();
+    masses = createSinglePlanet();
+    
+    // Initialize with many satellites in orbit
+    for (let i = 0; i < initialSatelliteCount; i += 1) {
+      spawnSatelliteInOrbit(masses[0]);
+    }
   };
 
   p.draw = () => {
     if (satellites.length < maxSatellites && p.random() < spawnProbability) {
-      const randomPlanet = masses[Math.floor(p.random(masses.length))];
-      spawnSatelliteAtEdge(randomPlanet.position);
+      spawnSatelliteInOrbit(masses[0]);
     }
 
     stepSimulation();
-    cullCollidedSatellites();
-    // Update dying trails (decrement fadeTime, remove when done)
-    dyingTrails = dyingTrails.filter((dying) => {
-      dying.fadeTime -= 1;
-      return dying.fadeTime > 0;
-    });
     renderScene();
   };
 
