@@ -54,17 +54,45 @@ const sketch = (p) => {
   // Satellites are rendered as a single point
   const getSatelliteRadius = () => 1;
 
-  const createRandomPlanetAttributes = () => {
-    const mass = p.random(5000, 10000);
-    // Random radius between 30 and 80
-    const radius = p.random(30, 80);
-    // Random color with some warmth bias (yellow-orange-red tones)
-    const r = p.random(200, 255);
-    const g = p.random(150, 220);
-    const b = p.random(100, 180);
-    const color = [r, g, b];
+  const PLANET_TYPES = {
+    GAS_GIANT: 'gasGiant',
+    MOON: 'moon',
+  };
 
-    return { mass, radius, color };
+  const createPlanetAttributes = (type) => {
+    const mass = p.random(5000, 10000);
+    
+    // Assign radius based on type (moons smaller, gas giants larger)
+    let radius;
+    switch (type) {
+      case PLANET_TYPES.GAS_GIANT:
+        // Gas giants: larger radius (50-80)
+        radius = p.random(50, 80);
+        break;
+      case PLANET_TYPES.MOON:
+        // Moons: smaller radius (15-40)
+        radius = p.random(15, 40);
+        break;
+      default:
+        radius = p.random(30, 80);
+    }
+    
+    // Generate color based on type
+    let color;
+    switch (type) {
+      case PLANET_TYPES.GAS_GIANT:
+        // Yellow-orange-red tones (Jupiter-like)
+        color = [p.random(200, 255), p.random(150, 220), p.random(100, 180)];
+        break;
+      case PLANET_TYPES.MOON:
+        // Grayish tones (moon-like)
+        color = [p.random(120, 180), p.random(120, 180), p.random(130, 190)];
+        break;
+      default:
+        color = [p.random(200, 255), p.random(150, 220), p.random(100, 180)];
+    }
+
+    return { mass, radius, color, type };
   };
 
   // Check if a planet is within the bounds of the canvas
@@ -100,15 +128,48 @@ const sketch = (p) => {
       [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
     }
 
-    // Place planets in grid cells
-    const numPlanets = Math.floor(p.random(minNumPlanets, maxNumPlanets)); // Random number of planets
-    for (let i = 0; i < numPlanets && i < gridPositions.length; i += 1) {
-      const gridPos = gridPositions[i];
+    // Create one gas giant first
+    let gasGiantPlaced = false;
+    let gridIndex = 0;
+    
+    while (!gasGiantPlaced && gridIndex < gridPositions.length) {
+      const gridPos = gridPositions[gridIndex];
       const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
       const cellCenterY = -halfSize + (gridPos.y + 0.5) * cellSize;
 
       // Random position within cell (with margin)
-      const attrs = createRandomPlanetAttributes();
+      const attrs = createPlanetAttributes(PLANET_TYPES.GAS_GIANT);
+      let planetX = cellCenterX + p.random(-cellMargin, cellMargin);
+      let planetY = cellCenterY + p.random(-cellMargin, cellMargin);
+
+      // Clamp position to ensure planet (including radius) stays within bounds
+      planetX = p.constrain(planetX, -halfSize + attrs.radius, halfSize - attrs.radius);
+      planetY = p.constrain(planetY, -halfSize + attrs.radius, halfSize - attrs.radius);
+
+      const planet = {
+        ...attrs,
+        position: p.createVector(planetX, planetY),
+      };
+
+      if (isPlanetWithinBounds(planet)) {
+        planets.push(planet);
+        gasGiantPlaced = true;
+      }
+      gridIndex += 1;
+    }
+
+    // Create 2-6 moons
+    const numMoons = Math.floor(p.random(2, 7)); // 2-6 moons
+    let moonsPlaced = 0;
+    gridIndex = 0;
+
+    while (moonsPlaced < numMoons && gridIndex < gridPositions.length) {
+      const gridPos = gridPositions[gridIndex];
+      const cellCenterX = -halfSize + (gridPos.x + 0.5) * cellSize;
+      const cellCenterY = -halfSize + (gridPos.y + 0.5) * cellSize;
+
+      // Random position within cell (with margin)
+      const attrs = createPlanetAttributes(PLANET_TYPES.MOON);
       let planetX = cellCenterX + p.random(-cellMargin, cellMargin);
       let planetY = cellCenterY + p.random(-cellMargin, cellMargin);
 
@@ -137,7 +198,9 @@ const sketch = (p) => {
 
       if (isValid) {
         planets.push(planet);
+        moonsPlaced += 1;
       }
+      gridIndex += 1;
     }
 
     return planets;
@@ -355,7 +418,7 @@ const sketch = (p) => {
       // Use noise to create banding pattern (Jupiter-like)
       const noiseX = centerX * 0.01;
       const noiseY = (centerY + y) * 0.02;
-      const noiseTime = p.frameCount * 0.05; // Slow animation
+      const noiseTime = p.frameCount * 0.0005; // Slow animation
       const noiseValue = p.noise(noiseX, noiseY, noiseTime);
       
       // Vary color based on noise (Jupiter-like color variation)
@@ -373,6 +436,30 @@ const sketch = (p) => {
     pg.pop();
   };
 
+  const drawMoon = (body) => {
+    const radius = getBodyRadius(body);
+    const centerX = body.position.x;
+    const centerY = body.position.y;
+    
+    // Solid pale grey color
+    pg.fill(180, 180, 190);
+    pg.ellipse(centerX, centerY, radius * 2, radius * 2);
+  };
+
+  const drawPlanet = (body) => {
+    switch (body.type) {
+      case PLANET_TYPES.GAS_GIANT:
+        drawGasGiant(body);
+        break;
+      case PLANET_TYPES.MOON:
+        drawMoon(body);
+        break;
+      default:
+        // Fallback to gas giant if type is unknown
+        drawGasGiant(body);
+    }
+  };
+
   const renderScene = () => {
     pg.push();
     pg.clear();
@@ -381,7 +468,7 @@ const sketch = (p) => {
 
     pg.noStroke();
     masses.forEach((body) => {
-      drawGasGiant(body);
+      drawPlanet(body);
     });
 
     // Render dying trails (fading out after collision)
