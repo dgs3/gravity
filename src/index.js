@@ -19,9 +19,7 @@ const sketch = (p) => {
   const satelliteMass = .25;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const numSatellitesRange = 100;
-  const maxSatellites = 200 + Math.floor(p.random(numSatellitesRange));
-  const initialSatelliteCount = 2000;
+  const initialSatelliteCount = 600;
   const maxTrailLength = 500; // Maximum number of positions to store in satellite trail
   const trailUpdateFrequency = 3; // Update trail every N frames
 
@@ -173,10 +171,6 @@ const sketch = (p) => {
     satellite.acceleration = computeAcceleration(satellite);
     
     satellites.push(satellite);
-    
-    if (satellites.length > maxSatellites) {
-      satellites.shift();
-    }
   };
 
   const stepSimulation = () => {
@@ -201,20 +195,27 @@ const sketch = (p) => {
       });
     }
     // Update trails every N frames (after all physics steps)
+    // Only update trails for visible satellites to prevent off-screen trail buildup
     if (p.frameCount % trailUpdateFrequency === 0) {
+      const visibleSatellites = getVisibleSatellites();
+      const visibleSet = new Set(visibleSatellites); // For fast lookup
+      
       satellites.forEach((satellite) => {
-        const trail = satellite.trail;
-        // Reuse position object instead of creating new one each time
-        if (!trail.positions[trail.index]) {
-          trail.positions[trail.index] = {x: 0, y: 0};
-        }
-        trail.positions[trail.index].x = satellite.position.x;
-        trail.positions[trail.index].y = satellite.position.y;
-        
-        // Advance index and update length
-        trail.index = (trail.index + 1) % maxTrailLength;
-        if (trail.length < maxTrailLength) {
-          trail.length++;
+        // Only update trail if satellite is visible
+        if (visibleSet.has(satellite)) {
+          const trail = satellite.trail;
+          // Reuse position object instead of creating new one each time
+          if (!trail.positions[trail.index]) {
+            trail.positions[trail.index] = {x: 0, y: 0};
+          }
+          trail.positions[trail.index].x = satellite.position.x;
+          trail.positions[trail.index].y = satellite.position.y;
+          
+          // Advance index and update length
+          trail.index = (trail.index + 1) % maxTrailLength;
+          if (trail.length < maxTrailLength) {
+            trail.length++;
+          }
         }
       });
     }
@@ -399,10 +400,6 @@ const sketch = (p) => {
   };
 
   p.draw = () => {
-    if (satellites.length < maxSatellites && p.random() < spawnProbability) {
-      spawnSatelliteInOrbit(masses[0]);
-    }
-
     stepSimulation();
     renderScene();
   };
