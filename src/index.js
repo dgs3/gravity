@@ -18,7 +18,7 @@ const sketch = (p) => {
   const satelliteSpeedMultiplierMax = 3.0;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const initialSatelliteCount = 500;
+  const initialSatelliteCount = 400;
   const maxTrailLength = 300; // Maximum number of positions to store in satellite trail
   const trailUpdateFrequency = 1; // Update trail every N frames
 
