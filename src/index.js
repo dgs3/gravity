@@ -1,27 +1,26 @@
 const sketch = (p) => {
   const fixedSize = 1000;
-  const spawnProbability = 0.5;
-  const laneMinMultiplier = 1.1;
-  const laneMaxMultiplier = 2.0;
   const laneCountMin = 20;
-  const laneCountMax = 200;
+  const laneCountMax = 50;
   const laneMinRadiusMin = 1.1;
   const laneMinRadiusMax = 1.2;
-  const laneMaxRadiusMin = 1.5; // Minimum multiplier for max lane distance
-  const laneMaxRadiusMax = 2.0; // Maximum multiplier for max lane distance
+  const laneMaxRadiusMin = 2.0; // Minimum multiplier for max lane distance
+  const laneMaxRadiusMax = 2.2; // Maximum multiplier for max lane distance
   const laneDeltaMin = 0; // Random delta for messiness
   const laneDeltaMax = 5;
   const planetRotationSpeed = -0.0001; // Rotation speed per second (radians)
   let scaleUnit;
   let pg;
 
-  const G = 15;
+  const G = 25  ;
   const satelliteMass = .25;
+  const satelliteSpeedMultiplierMin = 0.4;
+  const satelliteSpeedMultiplierMax = 3.0;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const initialSatelliteCount = 600;
-  const maxTrailLength = 500; // Maximum number of positions to store in satellite trail
-  const trailUpdateFrequency = 3; // Update trail every N frames
+  const initialSatelliteCount = 400;
+  const maxTrailLength = 300; // Maximum number of positions to store in satellite trail
+  const trailUpdateFrequency = 1; // Update trail every N frames
 
   let masses = [];
   let satellites = [];
@@ -42,7 +41,8 @@ const sketch = (p) => {
         return;
       }
 
-      const force = (G * body.mass) / distanceSq;
+      const effectiveG = G * (satellite.speedMultiplier * satellite.speedMultiplier);
+      const force = (effectiveG * body.mass) / distanceSq;
       const fx = (dx / distance) * force;
       const fy = (dy / distance) * force;
       
@@ -54,7 +54,6 @@ const sketch = (p) => {
 
   const getBodyRadius = (body) => body.radius;
   // Satellites are rendered as a single point
-  const getSatelliteRadius = () => 1;
 
   const PLANET_TYPES = {
     GAS_GIANT: 'gasGiant',
@@ -133,8 +132,12 @@ const sketch = (p) => {
       y: planet.position.y + Math.sin(angle) * orbitalDistance
     };
     
-    // Calculate circular orbit velocity
-    const baseSpeed = Math.sqrt((G * planet.mass) / orbitalDistance);
+    // Generate random speed multiplier for this satellite
+    const speedMultiplier = p.random(satelliteSpeedMultiplierMin, satelliteSpeedMultiplierMax);
+    
+    // Calculate circular orbit velocity (normal orbital speed)
+    const effectiveG = G * (speedMultiplier * speedMultiplier);
+    const baseSpeed = Math.sqrt((effectiveG * planet.mass) / orbitalDistance);
     
     // Tangential direction perpendicular to radius vector
     const dx = planet.position.x - spawnPosition.x;
@@ -158,6 +161,7 @@ const sketch = (p) => {
       mass: satelliteMass,
       position: {x: spawnPosition.x, y: spawnPosition.y},
       velocity: orbitalVelocity,
+      speedMultiplier: speedMultiplier,
       trail: {
         positions: new Array(maxTrailLength), // Don't pre-initialize
         index: 1, // Points to next write position
@@ -195,27 +199,20 @@ const sketch = (p) => {
       });
     }
     // Update trails every N frames (after all physics steps)
-    // Only update trails for visible satellites to prevent off-screen trail buildup
     if (p.frameCount % trailUpdateFrequency === 0) {
-      const visibleSatellites = getVisibleSatellites();
-      const visibleSet = new Set(visibleSatellites); // For fast lookup
-      
       satellites.forEach((satellite) => {
-        // Only update trail if satellite is visible
-        if (visibleSet.has(satellite)) {
-          const trail = satellite.trail;
-          // Reuse position object instead of creating new one each time
-          if (!trail.positions[trail.index]) {
-            trail.positions[trail.index] = {x: 0, y: 0};
-          }
-          trail.positions[trail.index].x = satellite.position.x;
-          trail.positions[trail.index].y = satellite.position.y;
-          
-          // Advance index and update length
-          trail.index = (trail.index + 1) % maxTrailLength;
-          if (trail.length < maxTrailLength) {
-            trail.length++;
-          }
+        const trail = satellite.trail;
+        // Reuse position object instead of creating new one each time
+        if (!trail.positions[trail.index]) {
+          trail.positions[trail.index] = {x: 0, y: 0};
+        }
+        trail.positions[trail.index].x = satellite.position.x;
+        trail.positions[trail.index].y = satellite.position.y;
+        
+        // Advance index and update length
+        trail.index = (trail.index + 1) % maxTrailLength;
+        if (trail.length < maxTrailLength) {
+          trail.length++;
         }
       });
     }
@@ -231,7 +228,7 @@ const sketch = (p) => {
     pg.push();
     pg.translate(centerX, centerY);
     pg.rotate(body.rotation); // Apply rotation
-    const bandHeight = 1.5;
+    const bandHeight = 4;
     // Draw bands from top to bottom
     for (let y = -radius; y < radius; y += bandHeight) {
       // Calculate width of band at this y position (circular cross-section)
@@ -268,48 +265,6 @@ const sketch = (p) => {
     drawGasGiant(body);
   };
 
-  const getVisibleSatellites = () => {
-    const halfSize = fixedSize / 2;
-    const margin = 50; // Small margin for smooth rendering
-
-    return satellites.filter((satellite) => {
-      // Check if satellite position is visible
-      const x = satellite.position.x;
-      const y = satellite.position.y;
-      const positionVisible = (
-        x >= -halfSize - margin &&
-        x <= halfSize + margin &&
-        y >= -halfSize - margin &&
-        y <= halfSize + margin
-      );
-      
-      if (positionVisible) return true;
-      
-      // Check if any point in the trail is visible (sample every Nth point for performance)
-      if (satellite.trail && satellite.trail.length > 0) {
-        const trail = satellite.trail;
-        // Iterate through trail: if not full, start at 0; if full, start at index (oldest)
-        const startIndex = trail.length < maxTrailLength ? 0 : trail.index;
-        // Sample every Nth point instead of checking all points
-        const checkInterval = Math.max(1, Math.floor(trail.length / 10));
-        for (let i = 0; i < trail.length; i += checkInterval) {
-          const posIndex = (startIndex + i) % maxTrailLength;
-          const pos = trail.positions[posIndex];
-          if (pos && (
-            pos.x >= -halfSize - margin &&
-            pos.x <= halfSize + margin &&
-            pos.y >= -halfSize - margin &&
-            pos.y <= halfSize + margin
-          )) {
-            return true; // Early exit when found
-          }
-        }
-      }
-      
-      return false;
-    });
-  };
-
   const renderScene = () => {
     pg.push();
     pg.clear();
@@ -321,14 +276,11 @@ const sketch = (p) => {
       drawPlanet(body);
     });
 
-    // Get visible satellites (position or trail visible)
-    const visibleSatellites = getVisibleSatellites();
-
-    // Render satellite trails (only for visible satellites)
+    // Render satellite trails
     const ctx = pg.drawingContext;
     ctx.lineWidth = 1 / scaleUnit; // Scale line width with zoom
     
-    visibleSatellites.forEach((satellite) => {
+    satellites.forEach((satellite) => {
       if (satellite.trail && satellite.trail.length > 1) {
         const trail = satellite.trail;
         
@@ -366,10 +318,10 @@ const sketch = (p) => {
       }
     });
 
-    // Render satellite points (only for visible satellites)
+    // Render satellite points
     pg.stroke('white');
     pg.strokeWeight(2);
-    visibleSatellites.forEach((satellite) => {
+    satellites.forEach((satellite) => {
       pg.point(satellite.position.x, satellite.position.y);
     });
 
