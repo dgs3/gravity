@@ -3,25 +3,25 @@ const sketch = (p) => {
   const spawnProbability = 0.5;
   const laneMinMultiplier = 1.1;
   const laneMaxMultiplier = 2.0;
-  const laneCountMin = 30;
-  const laneCountMax = 80;
+  const laneCountMin = 20;
+  const laneCountMax = 200;
   const laneMinRadiusMin = 1.1;
   const laneMinRadiusMax = 1.2;
   const laneMaxRadiusMin = 1.5; // Minimum multiplier for max lane distance
   const laneMaxRadiusMax = 2.0; // Maximum multiplier for max lane distance
   const laneDeltaMin = 0; // Random delta for messiness
   const laneDeltaMax = 5;
-  const planetRotationSpeed = 0.00001; // Rotation speed per second (radians)
+  const planetRotationSpeed = -0.0001; // Rotation speed per second (radians)
   let scaleUnit;
   let pg;
 
-  const G = 1;
+  const G = 15;
   const satelliteMass = .25;
   const dt = 0.01;
-  const stepsPerFrame = 25;
-  const numSatellitesRange = 200
-  const maxSatellites = 800 + Math.floor(p.random(numSatellitesRange));
-  const initialSatelliteCount = 200;
+  const stepsPerFrame = 10;
+  const numSatellitesRange = 100;
+  const maxSatellites = 200 + Math.floor(p.random(numSatellitesRange));
+  const initialSatelliteCount = 2000;
   const maxTrailLength = 500; // Maximum number of positions to store in satellite trail
   const trailUpdateFrequency = 3; // Update trail every N frames
 
@@ -37,7 +37,7 @@ const sketch = (p) => {
     masses.forEach((body) => {
       const dx = body.position.x - sx;
       const dy = body.position.y - sy;
-      const distanceSq = Math.max(dx * dx + dy * dy, 0.25);
+      const distanceSq = Math.max(dx * dx + dy * dy, .25);
       const distance = Math.sqrt(distanceSq);
 
       if (distance === 0) {
@@ -51,7 +51,6 @@ const sketch = (p) => {
       ax += fx;
       ay += fy;
     });
-
     return {x: ax, y: ay};
   };
 
@@ -205,8 +204,12 @@ const sketch = (p) => {
     if (p.frameCount % trailUpdateFrequency === 0) {
       satellites.forEach((satellite) => {
         const trail = satellite.trail;
-        // Write to current index
-        trail.positions[trail.index] = {x: satellite.position.x, y: satellite.position.y};
+        // Reuse position object instead of creating new one each time
+        if (!trail.positions[trail.index]) {
+          trail.positions[trail.index] = {x: 0, y: 0};
+        }
+        trail.positions[trail.index].x = satellite.position.x;
+        trail.positions[trail.index].y = satellite.position.y;
         
         // Advance index and update length
         trail.index = (trail.index + 1) % maxTrailLength;
@@ -227,15 +230,15 @@ const sketch = (p) => {
     pg.push();
     pg.translate(centerX, centerY);
     pg.rotate(body.rotation); // Apply rotation
-    
+    const bandHeight = 1.5;
     // Draw bands from top to bottom
-    for (let y = -radius; y < radius; y += 1.5) {
+    for (let y = -radius; y < radius; y += bandHeight) {
       // Calculate width of band at this y position (circular cross-section)
       const xWidth = Math.sqrt(radius * radius - y * y);
       
       // Use noise to create banding pattern (Jupiter-like)
-      const noiseX = centerX * 0.01;
-      const noiseY = (centerY + y) * 0.02;
+      const noiseX = 0;
+      const noiseY = y * 0.02;
       const noiseTime = p.frameCount * 0.0005; // Slow animation
       const noiseValue = p.noise(noiseX, noiseY, noiseTime);
       
@@ -248,7 +251,7 @@ const sketch = (p) => {
       pg.fill(bandR, bandG, bandB);
       
       // Draw thin horizontal ellipse (creates circular band)
-      pg.ellipse(0, y, xWidth * 2, 1.5);
+      pg.ellipse(0, y, xWidth * 2, bandHeight);
     }
     
     // Draw planet circumference with stroke
@@ -281,12 +284,14 @@ const sketch = (p) => {
       
       if (positionVisible) return true;
       
-      // Check if any point in the trail is visible
+      // Check if any point in the trail is visible (sample every Nth point for performance)
       if (satellite.trail && satellite.trail.length > 0) {
         const trail = satellite.trail;
         // Iterate through trail: if not full, start at 0; if full, start at index (oldest)
         const startIndex = trail.length < maxTrailLength ? 0 : trail.index;
-        for (let i = 0; i < trail.length; i += 1) {
+        // Sample every Nth point instead of checking all points
+        const checkInterval = Math.max(1, Math.floor(trail.length / 10));
+        for (let i = 0; i < trail.length; i += checkInterval) {
           const posIndex = (startIndex + i) % maxTrailLength;
           const pos = trail.positions[posIndex];
           if (pos && (
@@ -295,7 +300,7 @@ const sketch = (p) => {
             pos.y >= -halfSize - margin &&
             pos.y <= halfSize + margin
           )) {
-            return true;
+            return true; // Early exit when found
           }
         }
       }
@@ -319,10 +324,12 @@ const sketch = (p) => {
     const visibleSatellites = getVisibleSatellites();
 
     // Render satellite trails (only for visible satellites)
+    const ctx = pg.drawingContext;
+    ctx.lineWidth = 1 / scaleUnit; // Scale line width with zoom
+    
     visibleSatellites.forEach((satellite) => {
       if (satellite.trail && satellite.trail.length > 1) {
         const trail = satellite.trail;
-        const ctx = pg.drawingContext;
         
         // Get start index: if not full, start at 0; if full, start at index (oldest)
         const startIndex = trail.length < maxTrailLength ? 0 : trail.index;
@@ -340,7 +347,6 @@ const sketch = (p) => {
         gradient.addColorStop(1, 'rgba(255, 255, 255, 0.8)'); // Semi-opaque at end (newest)
         
         ctx.strokeStyle = gradient;
-        ctx.lineWidth = 1 / scaleUnit; // Scale line width with zoom
         ctx.beginPath();
         
         // Draw trail from oldest to newest
