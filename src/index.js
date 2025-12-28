@@ -18,7 +18,7 @@ const sketch = (p) => {
   const satelliteSpeedMultiplierMax = 3.0;
   const dt = 0.01;
   const stepsPerFrame = 10;
-  const initialSatelliteCount = 400;
+  const initialSatelliteCount = 500;
   const maxTrailLength = 300; // Maximum number of positions to store in satellite trail
   const trailUpdateFrequency = 1; // Update trail every N frames
 
@@ -135,6 +135,13 @@ const sketch = (p) => {
     // Generate random speed multiplier for this satellite
     const speedMultiplier = p.random(satelliteSpeedMultiplierMin, satelliteSpeedMultiplierMax);
     
+    // Calculate color based on speed multiplier (white brightness proportional to speed)
+    // Map speedMultiplier (min to max) to brightness value (0 to 255)
+    const speedRange = satelliteSpeedMultiplierMax - satelliteSpeedMultiplierMin;
+    const normalizedSpeed = (speedMultiplier - satelliteSpeedMultiplierMin) / speedRange;
+    const brightness = Math.floor(normalizedSpeed * 255);
+    const satelliteColor = [brightness, brightness, brightness]; // White brightness proportional to speed
+    
     // Calculate circular orbit velocity (normal orbital speed)
     const effectiveG = G * (speedMultiplier * speedMultiplier);
     const baseSpeed = Math.sqrt((effectiveG * planet.mass) / orbitalDistance);
@@ -162,6 +169,7 @@ const sketch = (p) => {
       position: {x: spawnPosition.x, y: spawnPosition.y},
       velocity: orbitalVelocity,
       speedMultiplier: speedMultiplier,
+      color: satelliteColor,
       trail: {
         positions: new Array(maxTrailLength), // Don't pre-initialize
         index: 1, // Points to next write position
@@ -291,13 +299,16 @@ const sketch = (p) => {
         const startPos = trail.positions[oldestIndex];
         const endPos = trail.positions[newestIndex];
         
-        // Create gradient from transparent (oldest) to opaque (newest)
+        // Get satellite color for trail
+        const [r, g, b] = satellite.color;
+        
+        // Create gradient from transparent (oldest) to opaque (newest) using satellite color
         const gradient = ctx.createLinearGradient(
           startPos.x, startPos.y,
           endPos.x, endPos.y
         );
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0)'); // Transparent at start (oldest)
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.8)'); // Semi-opaque at end (newest)
+        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`); // Transparent at start (oldest)
+        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.8)`); // Semi-opaque at end (newest)
         
         ctx.strokeStyle = gradient;
         ctx.beginPath();
@@ -318,10 +329,11 @@ const sketch = (p) => {
       }
     });
 
-    // Render satellite points
-    pg.stroke('white');
+    // Render satellite points with color based on speed
     pg.strokeWeight(2);
     satellites.forEach((satellite) => {
+      const [r, g, b] = satellite.color;
+      pg.stroke(r, g, b);
       pg.point(satellite.position.x, satellite.position.y);
     });
 
